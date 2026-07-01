@@ -1,19 +1,22 @@
 """
-common/logger.py
+common.logger
+~~~~~~~~~~~~~
 
-Centralized logging configuration.
+Centralized logging configuration for the AI Manga Recommendation System.
 
-Why does this module exist?
----------------------------
-Instead of every module configuring its own logger, the project
-uses one shared logging system.
+This module provides a reusable logger configured with both console and
+rotating file handlers.
 
-Benefits
---------
-- Consistent log formatting
-- Console + file logging
-- Easier debugging
-- No duplicated configuration
+Why centralize logging?
+-----------------------
+Instead of every module configuring its own logger, the application
+uses a single configuration that ensures:
+
+- Consistent formatting
+- Unified log levels
+- Automatic log rotation
+- No duplicate handlers
+- Easy debugging
 
 Example
 -------
@@ -27,22 +30,45 @@ logger.info("Application started")
 from __future__ import annotations
 
 import logging
-from logging import Logger
+from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from common.paths import LOGS_DIR
 
-# Ensure the logs directory exists.
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+LOG_FILE: Path = LOGS_DIR / "application.log"
+
+LOG_FORMAT = (
+    "%(asctime)s | %(levelname)-8s | "
+    "%(name)s | %(message)s"
+)
+
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+
+DEFAULT_LOG_LEVEL = logging.INFO
+
+_MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+_BACKUP_COUNT = 5
 
 
-def get_logger(name: str) -> Logger:
+# =============================================================================
+# Logger Factory
+# =============================================================================
+
+def get_logger(name: str) -> logging.Logger:
     """
-    Return a configured logger for the given module.
+    Return a configured logger.
+
+    The logger is configured only once. Subsequent calls reuse the
+    existing configuration and avoid adding duplicate handlers.
 
     Parameters
     ----------
-    name : str
-        Usually pass __name__.
+    name:
+        Usually __name__ from the calling module.
 
     Returns
     -------
@@ -52,32 +78,39 @@ def get_logger(name: str) -> Logger:
 
     logger = logging.getLogger(name)
 
-    # Prevent duplicate handlers when importing repeatedly.
     if logger.handlers:
         return logger
 
-    logger.setLevel(logging.INFO)
+    logger.setLevel(DEFAULT_LOG_LEVEL)
 
     formatter = logging.Formatter(
-        fmt="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
-        datefmt="%Y-%m-%d %H:%M:%S",
+        fmt=LOG_FORMAT,
+        datefmt=DATE_FORMAT,
     )
 
-    # Console output
+    # -------------------------------------------------------------------------
+    # Console Handler
+    # -------------------------------------------------------------------------
+
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
 
-    # File output
-    file_handler = logging.FileHandler(
-        LOGS_DIR / "project.log",
+    # -------------------------------------------------------------------------
+    # Rotating File Handler
+    # -------------------------------------------------------------------------
+
+    file_handler = RotatingFileHandler(
+        filename=LOG_FILE,
+        maxBytes=_MAX_LOG_SIZE,
+        backupCount=_BACKUP_COUNT,
         encoding="utf-8",
     )
+
     file_handler.setFormatter(formatter)
 
     logger.addHandler(console_handler)
     logger.addHandler(file_handler)
 
-    # Prevent duplicate logging from the root logger.
     logger.propagate = False
 
     return logger
