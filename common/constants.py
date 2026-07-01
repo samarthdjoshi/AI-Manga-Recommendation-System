@@ -1,76 +1,82 @@
 """
-common/constants.py
+common.constants
+~~~~~~~~~~~~~~~~
 
-Centralized project-wide constants.
+Project-wide constants.
 
-Purpose
--------
-This module contains immutable values that are shared across the entire
-application.
+This module defines values that are constant throughout the application
+lifecycle and are shared across multiple modules.
 
-A constant should:
-    - Never change while the application is running.
-    - Be environment-independent.
-    - Represent a fixed concept used by multiple modules.
+Constants differ from configuration:
 
-Do NOT store:
-    - Secrets
-    - API keys
-    - URLs
-    - Timeouts
-    - Database credentials
-Those belong in config.py.
+- Constants never change at runtime.
+- Configuration may differ between environments.
+
+Examples
+--------
+Constants:
+    - File extensions
+    - Default retry count
+    - Default page size
+
+Configuration:
+    - Database URL
+    - API Keys
+    - Environment
 """
 
 from __future__ import annotations
 
 # =============================================================================
-# Project Information
+# Project
 # =============================================================================
 
-PROJECT_NAME: str = "AI Manga Recommendation System"
+PROJECT_NAME = "AI Manga Recommendation System"
+
+PROJECT_VERSION = "0.1.0"
 
 # =============================================================================
-# Data Pipeline Layers
+# HTTP
 # =============================================================================
 
-BRONZE: str = "bronze"
-SILVER: str = "silver"
-GOLD: str = "gold"
+DEFAULT_TIMEOUT = 30
 
-PIPELINE_LAYERS: tuple[str, ...] = (
-    BRONZE,
-    SILVER,
-    GOLD,
+DEFAULT_RETRIES = 3
+
+USER_AGENT = (
+    f"{PROJECT_NAME}/{PROJECT_VERSION}"
 )
 
 # =============================================================================
-# Supported Data Sources
+# Pagination
 # =============================================================================
 
-SUPPORTED_DATA_SOURCES: tuple[str, ...] = (
-    "anilist",
-    "mangadex",
-    "jikan",
-    "mangaupdates",
-)
+DEFAULT_PAGE_SIZE = 50
+
+MAX_PAGE_SIZE = 500
 
 # =============================================================================
-# Supported File Formats
+# File Extensions
 # =============================================================================
 
-SUPPORTED_FILE_FORMATS: tuple[str, ...] = (
-    "json",
-    "csv",
-    "parquet",
-)
+JSON_EXTENSION = ".json"
+
+PARQUET_EXTENSION = ".parquet"
+
+CSV_EXTENSION = ".csv"
+
+# =============================================================================
+# Data Layers
+# =============================================================================
+
+BRONZE_LAYER = "bronze"
+
+SILVER_LAYER = "silver"
+
+GOLD_LAYER = "gold"
 
 # =============================================================================
 # Logging
 # =============================================================================
 
-DEFAULT_LOG_FILENAME: str = "project.log"
-
-DEFAULT_LOG_FORMAT: str = (
-    "%(asctime)s | %(levelname)-8s | %(name)s | %(message)s"
-)
+DEFAULT_LOGGER_NAME = "ai_manga"
