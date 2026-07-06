@@ -1,28 +1,33 @@
-from common.constants import *
+from common.constants import (
+    PROJECT_NAME,
+    SUPPORTED_DATA_SOURCES,
+    DATA_LAYERS,
+    JSON_EXTENSION,
+    PARQUET_EXTENSION,
+    CSV_EXTENSION,
+    DEFAULT_ENCODING,
+)
 
 
-def test_project_name():
-    assert PROJECT_NAME
+def test_project_name() -> None:
+    assert PROJECT_NAME == "AI Manga Recommendation System"
 
 
-def test_project_version():
-    assert PROJECT_VERSION
+def test_supported_sources() -> None:
+    assert "anilist" in SUPPORTED_DATA_SOURCES
+    assert "mangadex" in SUPPORTED_DATA_SOURCES
+    assert len(SUPPORTED_DATA_SOURCES) == 4
 
 
-def test_default_timeout():
-    assert DEFAULT_TIMEOUT > 0
+def test_data_layers() -> None:
+    assert DATA_LAYERS == ("bronze", "silver", "gold")
 
 
-def test_retry_count():
-    assert DEFAULT_RETRIES >= 0
-
-
-def test_page_size():
-    assert DEFAULT_PAGE_SIZE > 0
-    assert MAX_PAGE_SIZE >= DEFAULT_PAGE_SIZE
-
-
-def test_extensions():
+def test_extensions() -> None:
     assert JSON_EXTENSION == ".json"
     assert PARQUET_EXTENSION == ".parquet"
     assert CSV_EXTENSION == ".csv"
+
+
+def test_default_encoding() -> None:
+    assert DEFAULT_ENCODING.lower() == "utf-8"

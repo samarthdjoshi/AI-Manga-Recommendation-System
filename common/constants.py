@@ -1,82 +1,49 @@
 """
-common.constants
-~~~~~~~~~~~~~~~~
+Application-wide constants.
 
-Project-wide constants.
-
-This module defines values that are constant throughout the application
-lifecycle and are shared across multiple modules.
-
-Constants differ from configuration:
-
-- Constants never change at runtime.
-- Configuration may differ between environments.
-
-Examples
---------
-Constants:
-    - File extensions
-    - Default retry count
-    - Default page size
-
-Configuration:
-    - Database URL
-    - API Keys
-    - Environment
+These values are fixed for the lifetime of the application.
+If a value is expected to change between environments,
+it belongs in config.py instead.
 """
 
 from __future__ import annotations
 
 # =============================================================================
-# Project
+# Project Metadata
 # =============================================================================
 
 PROJECT_NAME = "AI Manga Recommendation System"
 
-PROJECT_VERSION = "0.1.0"
-
-# =============================================================================
-# HTTP
-# =============================================================================
-
-DEFAULT_TIMEOUT = 30
-
-DEFAULT_RETRIES = 3
-
-USER_AGENT = (
-    f"{PROJECT_NAME}/{PROJECT_VERSION}"
+SUPPORTED_DATA_SOURCES = (
+    "anilist",
+    "mangadex",
+    "jikan",
+    "mangaupdates",
 )
-
-# =============================================================================
-# Pagination
-# =============================================================================
-
-DEFAULT_PAGE_SIZE = 50
-
-MAX_PAGE_SIZE = 500
-
-# =============================================================================
-# File Extensions
-# =============================================================================
-
-JSON_EXTENSION = ".json"
-
-PARQUET_EXTENSION = ".parquet"
-
-CSV_EXTENSION = ".csv"
 
 # =============================================================================
 # Data Layers
 # =============================================================================
 
-BRONZE_LAYER = "bronze"
-
-SILVER_LAYER = "silver"
-
-GOLD_LAYER = "gold"
+DATA_LAYERS = (
+    "bronze",
+    "silver",
+    "gold",
+)
 
 # =============================================================================
-# Logging
+# File Formats
 # =============================================================================
 
-DEFAULT_LOGGER_NAME = "ai_manga"
+JSON_EXTENSION = ".json"
+PARQUET_EXTENSION = ".parquet"
+CSV_EXTENSION = ".csv"
+
+DEFAULT_ENCODING = "utf-8"
+
+# =============================================================================
+# Date & Time
+# =============================================================================
+
+DEFAULT_DATE_FORMAT = "%Y-%m-%d"
+DEFAULT_DATETIME_FORMAT = "%Y-%m-%d %H:%M:%S"

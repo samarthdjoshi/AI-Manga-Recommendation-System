@@ -1,0 +1,12 @@
+-r base.txt
+
+pytest>=9.0,<10.0
+pytest-cov>=7.0,<8.0
+
+black>=25.0,<26.0
+
+ruff>=0.12,<1.0
+
+mypy>=1.17,<2.0
+
+pre-commit>=4.3,<5.0
