@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import math
 import time
 
 from common.paths import (
@@ -8,56 +9,58 @@ from common.paths import (
 )
 
 from ml.clients.anilist_client import AniListClient
-from ml.ingestion.checkpoint import CheckpointManager
+from ml.ingestion.checkpoint import IdBatchCheckpointManager
 from ml.ingestion.downloader import Downloader
 from ml.ingestion.metadata import MetadataWriter
 from ml.ingestion.progress import ProgressTracker
+
+BATCH_SIZE = 50
 
 
 def main() -> None:
     client = AniListClient()
     downloader = Downloader(ANILIST_BRONZE_DIR)
-    checkpoint = CheckpointManager(ANILIST_CHECKPOINT_DIR / "checkpoint.json")
+    checkpoint = IdBatchCheckpointManager(ANILIST_CHECKPOINT_DIR / "checkpoint.json")
     metadata_writer = MetadataWriter(ANILIST_BRONZE_DIR)
 
-    page = checkpoint.load()
+    state = checkpoint.load()
+    next_id = state["next_id"]
+    max_id = state["max_id"]
+    page = state["page_number"]
+
+    if max_id is None:
+        max_id = client.get_max_manga_id()
+
     total_records = 0
     start_time = time.monotonic()
 
     tracker = ProgressTracker(source_name="AniList")
+    tracker.total_pages = math.ceil(max_id / BATCH_SIZE)
 
-    while True:
-        response = client.get_manga_page(page=page, per_page=50)
+    while next_id <= max_id:
+        batch_ids = list(range(next_id, min(next_id + BATCH_SIZE, max_id + 1) + 1))
+        # min() above already bounds the upper end; build the exact list:
 
-        downloader.save_page(page, response)
+        response = client.get_manga_batch(batch_ids)
+        media = client.extract_batch_media(response)
 
-        page_info = client.get_page_info(response)
-        media = client.get_media(response)
+        downloader.save_page(page, {"media": media})
 
         total_records += len(media)
-
-        last_page = page_info.get("lastPage")
-
-        if tracker.total_pages is None:
-            tracker.total_pages = last_page
 
         tracker.update(page=page, records_in_page=len(media))
         tracker.print_progress()
 
-        # Stop if this was the final page, using BOTH signals:
-        # hasNextPage can be unreliable on the boundary page for some
-        # APIs, so we also guard using lastPage directly.
-        is_last_page = (not page_info["hasNextPage"]) or (
-            last_page is not None and page >= last_page
-        )
-
-        if is_last_page:
-            checkpoint.reset()
-            break
-
-        checkpoint.save(page + 1)
+        next_id = batch_ids[-1] + 1
         page += 1
 
+        checkpoint.save(
+            next_id=next_id,
+            max_id=max_id,
+            page_number=page,
+        )
+
+    checkpoint.reset()
     client.close()
 
     elapsed = time.monotonic() - start_time
@@ -77,3 +80,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

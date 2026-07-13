@@ -1,4 +1,4 @@
-"""
+﻿"""
 Reusable HTTP client for all external API integrations.
 
 Responsibilities:
@@ -31,7 +31,7 @@ from common.logger import get_logger
 
 logger = get_logger(__name__)
 
-# Status codes worth retrying — everything else (400, 401, 403, 404, etc.)
+# Status codes worth retrying â€” everything else (400, 401, 403, 404, etc.)
 # is a permanent failure and should fail immediately instead of burning retries.
 RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
@@ -57,9 +57,11 @@ class BaseAPIClient:
         base_url: str,
         timeout: int | None = None,
         headers: dict[str, str] | None = None,
+        request_delay_seconds: float = REQUEST_DELAY_SECONDS,
     ) -> None:
 
         self.base_url = base_url.rstrip("/")
+        self.request_delay_seconds = request_delay_seconds
 
         self.client = httpx.Client(
             timeout=timeout or settings.API_TIMEOUT,
@@ -135,7 +137,7 @@ class BaseAPIClient:
     def _sleep_between_requests(self) -> None:
         """Pause briefly after a successful request to avoid rate limits."""
 
-        time.sleep(REQUEST_DELAY_SECONDS)
+        time.sleep(self.request_delay_seconds)
 
     @retry(
         retry=retry_if_exception_type(
