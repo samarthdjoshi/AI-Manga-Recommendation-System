@@ -31,27 +31,24 @@ def main() -> None:
     if max_id is None:
         max_id = client.get_max_manga_id()
 
-    total_records = 0
     start_time = time.monotonic()
 
     tracker = ProgressTracker(source_name="AniList")
     tracker.total_pages = math.ceil(max_id / BATCH_SIZE)
 
     while next_id <= max_id:
-        batch_ids = list(range(next_id, min(next_id + BATCH_SIZE, max_id + 1) + 1))
-        # min() above already bounds the upper end; build the exact list:
+        batch_end = min(next_id + BATCH_SIZE - 1, max_id)
+        batch_ids = list(range(next_id, batch_end + 1))
 
         response = client.get_manga_batch(batch_ids)
         media = client.extract_batch_media(response)
 
         downloader.save_page(page, {"media": media})
 
-        total_records += len(media)
-
         tracker.update(page=page, records_in_page=len(media))
         tracker.print_progress()
 
-        next_id = batch_ids[-1] + 1
+        next_id = batch_end + 1
         page += 1
 
         checkpoint.save(
@@ -67,17 +64,13 @@ def main() -> None:
 
     metadata_writer.write(
         source_name="anilist",
-        total_pages=page,
-        total_records=total_records,
         elapsed_seconds=elapsed,
     )
 
     print("\nDownload Complete")
     print(f"Last page processed : {page}")
-    print(f"Total manga         : {total_records}")
     print(f"Metadata saved to   : {ANILIST_BRONZE_DIR / 'metadata.json'}")
 
 
 if __name__ == "__main__":
     main()
-
