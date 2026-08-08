@@ -1,7 +1,20 @@
-# Python
+﻿# Python
 __pycache__/
 *.py[cod]
 *.pyo
+
+# Data (large, regenerable via scripts/ pipeline - never commit)
+data/
+
+# Virtual environments
+venv312/
+venv/
+.venv/
+
+# Build artifacts
+*.egg-info/
+build/
+dist/
 
 # Pytest
 .pytest_cache/
@@ -19,3 +32,5 @@ logs/*.log
 # OS
 .DS_Store
 Thumbs.db
+
+scratch/
