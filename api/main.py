@@ -15,11 +15,16 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.schemas import (
+    BrowseResponse,
+    GenreListResponse,
+    DiscoverResponse,
     HealthResponse,
     MangaDetail,
     RecommendationResponse,
     RecommendationResult,
     SearchResponse,
+    SuggestResponse,
+    SuggestResult,
 )
 from ml.recommender.service import MangaNotFoundError, RecommenderService
 
@@ -105,3 +110,59 @@ def recommend(
         count=len(results),
         results=[RecommendationResult(**r) for r in results],
     )
+
+
+@app.get("/discover", response_model=DiscoverResponse)
+def discover(
+    sort: str = Query("rating", pattern="^(rating|corroborated)$", description="rating or corroborated"),
+    limit: int = Query(12, ge=1, le=25, description="Max results to return"),
+) -> DiscoverResponse:
+    svc = get_service()
+    results = svc.discover(sort=sort, limit=limit)
+    return DiscoverResponse(sort=sort, count=len(results), results=results)
+
+
+@app.get("/search/suggest", response_model=SuggestResponse)
+def search_suggest(
+    q: str = Query(..., min_length=1, description="Partial title text for autocomplete"),
+    limit: int = Query(6, ge=1, le=10, description="Max suggestions to return"),
+) -> SuggestResponse:
+    svc = get_service()
+    results = svc.search(q, limit=limit)
+    return SuggestResponse(query=q, results=[SuggestResult(**r) for r in results])
+
+
+
+@app.get("/browse", response_model=BrowseResponse)
+def browse(
+    genre: list[str] | None = Query(None, description="Repeat param for multiple genres (AND match)"),
+    year_min: int | None = Query(None, description="Minimum release year"),
+    year_max: int | None = Query(None, description="Maximum release year"),
+    min_chapters: int | None = Query(None, ge=0, description="Minimum chapter count"),
+    genre_match: str = Query("and", pattern="^(and|or)$"),
+    hide_explicit: bool = Query(True, description="Exclude titles tagged with explicit-content genres"),
+    sort: str = Query("rating", pattern="^(rating|corroborated|newest|title)$"),
+    limit: int = Query(24, ge=1, le=100, description="Max results to return"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+) -> BrowseResponse:
+    svc = get_service()
+    results, total = svc.browse(
+        genres=genre,
+        genre_match=genre_match,
+        hide_explicit=hide_explicit,
+        year_min=year_min,
+        year_max=year_max,
+        min_chapters=min_chapters,
+        sort=sort,
+        limit=limit,
+        offset=offset,
+    )
+    return BrowseResponse(count=len(results), total=total, results=results)
+
+
+@app.get("/genres", response_model=GenreListResponse)
+def genres() -> GenreListResponse:
+    svc = get_service()
+    return GenreListResponse(genres=svc.list_genres())
+
+

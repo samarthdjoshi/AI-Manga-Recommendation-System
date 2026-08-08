@@ -15,15 +15,15 @@ class MangaSummary(BaseModel):
     sources: list[str] = []
     source_count: int
     match_confidence: str
+    cover_image_url: str | None = None
+    rating_combined: float | None = None
+    chapters: int | None = None
 
 
 class MangaDetail(MangaSummary):
     description: str | None = None
     status_raw: str | None = None
-    chapters: int | None = None
     volumes: int | None = None
-    rating_combined: float | None = None
-    cover_image_url: str | None = None
 
 
 class RecommendationResult(MangaSummary):
@@ -42,7 +42,36 @@ class RecommendationResponse(BaseModel):
     results: list[RecommendationResult]
 
 
+class DiscoverResponse(BaseModel):
+    sort: str
+    count: int
+    results: list[MangaSummary]
+
+
+class SuggestResult(BaseModel):
+    gold_id: str
+    title: str
+    cover_image_url: str | None = None
+    year: int | None = None
+    rating_combined: float | None = None
+
+
+class SuggestResponse(BaseModel):
+    query: str
+    results: list[SuggestResult]
+
+
 class HealthResponse(BaseModel):
     status: str
     total_gold_records: int
     indexed_records: int
+
+class BrowseResponse(BaseModel):
+    count: int
+    total: int
+    results: list[MangaSummary]
+
+
+class GenreListResponse(BaseModel):
+    genres: list[str]
+
