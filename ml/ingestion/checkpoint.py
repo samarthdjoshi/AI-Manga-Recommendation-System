@@ -205,3 +205,72 @@ class IdBatchCheckpointManager:
 
         if self.checkpoint_file.exists():
             self.checkpoint_file.unlink()
+
+
+class PartitionCheckpointManager:
+    """
+    Checkpoint manager for adaptive partition-based crawling.
+
+    Used for sources like MangaUpdates where no single pagination
+    method can reach the full catalog (search results are capped at
+    10000 hits per filter combination). The crawl works through a
+    queue of filter partitions (e.g. type=Manga + letter=A); any
+    partition reporting exactly 10000 hits is assumed possibly-capped
+    and gets split into finer sub-partitions (e.g. by year) which are
+    pushed back onto the queue instead of being downloaded directly.
+
+    Stores the remaining partition queue, the partition currently being
+    downloaded (if any) and its in-progress page number, and the next
+    output page number to use for filenames.
+    """
+
+    def __init__(
+        self,
+        checkpoint_file: Path,
+    ) -> None:
+        self.checkpoint_file = checkpoint_file
+
+    def load(self) -> dict:
+        """Return the saved crawl state, or None if starting fresh."""
+
+        if not self.checkpoint_file.exists():
+            return None
+
+        with self.checkpoint_file.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
+            return json.load(file)
+
+    def save(
+        self,
+        *,
+        queue: list[dict],
+        current_partition: dict | None,
+        current_page: int,
+        next_output_page: int,
+        partitions_completed: int = 0,
+    ) -> None:
+        """Save the current crawl state."""
+
+        with self.checkpoint_file.open(
+            "w",
+            encoding="utf-8",
+        ) as file:
+            json.dump(
+                {
+                    "queue": queue,
+                    "current_partition": current_partition,
+                    "current_page": current_page,
+                    "next_output_page": next_output_page,
+                "partitions_completed": partitions_completed,
+                },                file,
+                indent=4,
+            )
+
+    def reset(self) -> None:
+        """Delete checkpoint after successful download."""
+
+        if self.checkpoint_file.exists():
+            self.checkpoint_file.unlink()
+

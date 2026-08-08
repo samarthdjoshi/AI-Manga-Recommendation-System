@@ -1,4 +1,4 @@
-"""
+﻿"""
 common.paths
 ~~~~~~~~~~~~
 
@@ -71,6 +71,17 @@ SILVER_DIR = DATA_DIR / "silver"
 GOLD_DIR = DATA_DIR / "gold"
 
 # =============================================================================
+# Checkpoints
+# =============================================================================
+
+CHECKPOINTS_DIR = DATA_DIR / "checkpoints"
+
+ANILIST_CHECKPOINT_DIR = CHECKPOINTS_DIR / "anilist"
+MANGADEX_CHECKPOINT_DIR = CHECKPOINTS_DIR / "mangadex"
+JIKAN_CHECKPOINT_DIR = CHECKPOINTS_DIR / "jikan"
+MANGAUPDATES_CHECKPOINT_DIR = CHECKPOINTS_DIR / "mangaupdates"
+
+# =============================================================================
 # Bronze Data Sources
 # =============================================================================
 
@@ -88,6 +99,13 @@ _REQUIRED_DIRECTORIES = (
     BRONZE_DIR,
     SILVER_DIR,
     GOLD_DIR,
+
+    CHECKPOINTS_DIR,
+    ANILIST_CHECKPOINT_DIR,
+    MANGADEX_CHECKPOINT_DIR,
+    JIKAN_CHECKPOINT_DIR,
+    MANGAUPDATES_CHECKPOINT_DIR,
+
     ANILIST_BRONZE_DIR,
     MANGADEX_BRONZE_DIR,
     JIKAN_BRONZE_DIR,

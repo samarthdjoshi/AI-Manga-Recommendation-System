@@ -78,5 +78,6 @@ def normalize_mangadex_record(record: dict) -> UnifiedMangaRecord:
             "content_rating": attributes.get("contentRating"),
             "publication_demographic": attributes.get("publicationDemographic"),
             "original_language": attributes.get("originalLanguage"),
+            "links": attributes.get("links") or {},
         },
     )

@@ -64,6 +64,28 @@ class Settings(BaseSettings):
     USER_AGENT: str = "AI-Manga-Recommendation-System/0.1.0"
 
     # ======================================================
+    # API Rate Limiting
+    # ======================================================
+
+    API_REQUEST_DELAY: float = Field(
+        default=1.5,
+        ge=0,
+    )
+
+    API_MAX_BACKOFF: int = Field(
+        default=60,
+        ge=1,
+    )
+
+    API_RETRY_STATUS_CODES: tuple[int, ...] = (
+        429,
+        500,
+        502,
+        503,
+        504,
+    )
+
+    # ======================================================
     # Logging
     # ======================================================
 
