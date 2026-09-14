@@ -22,6 +22,8 @@ node_modules/
 # Local databases & logs
 database/*.db
 database/*.db-journal
+data/*.db
+data/*.db-journal
 backend_log.txt
 logs/*.log
 *.bak
