@@ -47,9 +47,15 @@ class RecommenderService:
         model_dir = SILVER_DIR.parent / "model"
 
         records: list[dict] = []
-        for page_file in sorted(gold_dir.glob("page_*.json")):
-            data = json.loads(page_file.read_text(encoding="utf-8"))
-            records.extend(data.get("records", []))
+        compact_file = SILVER_DIR.parent / "catalog_compact.json.gz"
+        if compact_file.exists():
+            import gzip
+            with gzip.open(compact_file, "rt", encoding="utf-8") as f:
+                records = json.load(f)
+        else:
+            for page_file in sorted(gold_dir.glob("page_*.json")):
+                data = json.loads(page_file.read_text(encoding="utf-8"))
+                records.extend(data.get("records", []))
 
         self.records: list[dict] = records
         self.records_by_gold_id: dict[str, dict] = {r["gold_id"]: r for r in records}
@@ -118,6 +124,28 @@ class RecommenderService:
                 if ocl and ocl not in self._clean_title_to_gold_id:
                     self._clean_title_to_gold_id[ocl] = gid
 
+        self._anilist_id_to_gold_id: dict[str, str] = {}
+        self._mal_id_to_gold_id: dict[str, str] = {}
+        self._mangaupdates_id_to_gold_id: dict[str, str] = {}
+        for r in self.records:
+            gid = r.get("gold_id")
+            if not gid:
+                continue
+            sids = r.get("source_ids") or {}
+            al_id = str(sids.get("anilist") or "")
+            if not al_id and gid.startswith("anilist:"):
+                al_id = gid.split("anilist:")[-1]
+            if al_id:
+                self._anilist_id_to_gold_id[al_id] = gid
+
+            mal_id = str(sids.get("myanimelist") or "")
+            if mal_id:
+                self._mal_id_to_gold_id[mal_id] = gid
+
+            mu_id = str(sids.get("mangaupdates") or "")
+            if mu_id:
+                self._mangaupdates_id_to_gold_id[mu_id] = gid
+
         full_faiss = model_dir / "similarity_index.faiss"
         full_ids = model_dir / "index_gold_ids.json"
         starter_faiss = model_dir / "starter_index.faiss"
@@ -137,6 +165,47 @@ class RecommenderService:
 
         self.gold_id_to_row: dict[str, int] = {gid: i for i, gid in enumerate(self.index_gold_ids)}
 
+    def resolve_external_id_to_gold_id(self, source: str, ext_id: str) -> str | None:
+        """Resolve an external catalog ID (AniList, MAL, MangaUpdates) to a canonical gold_id."""
+        src = (source or "").strip().lower()
+        eid = str(ext_id or "").strip()
+        if src in ("anilist", "al"):
+            return self._anilist_id_to_gold_id.get(eid)
+        if src in ("myanimelist", "mal"):
+            return self._mal_id_to_gold_id.get(eid)
+        if src in ("mangaupdates", "mu"):
+            return self._mangaupdates_id_to_gold_id.get(eid)
+        return None
+
+    def ensure_catalog_record(self, gold_id: str, title: str | None = None) -> dict:
+        """Ensure a gold_id exists in records_by_gold_id, creating a minimal entry if external."""
+        if gold_id in self.records_by_gold_id:
+            rec = self.records_by_gold_id[gold_id]
+            if title and (not rec.get("title") or rec.get("title") == gold_id):
+                rec["title"] = title
+            return rec
+
+        display_title = title or gold_id
+        new_rec = {
+            "gold_id": gold_id,
+            "title": display_title,
+            "original_title": None,
+            "cover_image_url": None,
+            "year": None,
+            "rating_combined": None,
+            "genres": [],
+            "sources": [gold_id.split(":")[0]] if ":" in gold_id else ["external"],
+            "source_count": 1,
+            "match_confidence": "external",
+            "chapters": None,
+        }
+        self.records.append(new_rec)
+        self.records_by_gold_id[gold_id] = new_rec
+        tl = display_title.strip().lower()
+        if tl not in self._title_to_gold_id:
+            self._title_to_gold_id[tl] = gold_id
+        return new_rec
+
     def resolve_title_to_gold_id(self, title: str) -> str | None:
         """Resolve a manga title or clean title variant to a canonical gold_id in O(1)."""
         if not title:
@@ -147,6 +216,10 @@ class RecommenderService:
         cl = re.sub(r"[^a-zA-Z0-9\s]", "", title).lower().strip()
         if cl in self._clean_title_to_gold_id:
             return self._clean_title_to_gold_id[cl]
+        if tl.startswith("the "):
+            t_sub = tl[4:].strip()
+            if t_sub in self._title_to_gold_id:
+                return self._title_to_gold_id[t_sub]
         return None
 
     @property

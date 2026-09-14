@@ -36,6 +36,7 @@ from api.schemas import (
 )
 from auth.database import Favorite, TrackingEntry, User, get_db, init_db
 from auth.routes import (
+    configure_catalog_external_resolver,
     configure_catalog_id_validator,
     configure_catalog_title_getter,
     configure_catalog_title_resolver,
@@ -62,7 +63,20 @@ async def lifespan(app: FastAPI):
         service = RecommenderService()
         print(f"Loaded {service.total_records} Gold records, "
               f"{service.indexed_records} indexed for similarity search.")
-    configure_catalog_id_validator(lambda gid: gid in service.records_by_gold_id)
+    
+    import re
+
+    def _catalog_validator(gid: str) -> bool:
+        if gid in service.records_by_gold_id:
+            return True
+        if hasattr(service, "ensure_catalog_record") and re.match(r"^(anilist|mal|mangadex|mangaupdates|custom):[a-zA-Z0-9_\-]+$", str(gid).strip()):
+            service.ensure_catalog_record(gid)
+            return True
+        return False
+
+    configure_catalog_id_validator(_catalog_validator)
+    if hasattr(service, "resolve_external_id_to_gold_id"):
+        configure_catalog_external_resolver(service.resolve_external_id_to_gold_id)
     if hasattr(service, "resolve_title_to_gold_id"):
         configure_catalog_title_resolver(service.resolve_title_to_gold_id)
     else:

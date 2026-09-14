@@ -89,6 +89,7 @@ bearer_scheme = HTTPBearer(auto_error=False)
 _catalog_id_validator: Callable[[str], bool] | None = None
 _catalog_title_resolver: Callable[[str], str | None] | None = None
 _catalog_title_getter: Callable[[str], str] | None = None
+_catalog_external_resolver: Callable[[str, str], str | None] | None = None
 
 
 def configure_catalog_id_validator(validator: Callable[[str], bool]) -> None:
@@ -107,6 +108,12 @@ def configure_catalog_title_getter(getter: Callable[[str], str]) -> None:
     """Configure the catalog title lookup used for CSV exports."""
     global _catalog_title_getter
     _catalog_title_getter = getter
+
+
+def configure_catalog_external_resolver(resolver: Callable[[str, str], str | None]) -> None:
+    """Configure the external source ID resolver (AniList, MAL, MangaUpdates)."""
+    global _catalog_external_resolver
+    _catalog_external_resolver = resolver
 
 
 def _require_catalog_id(gold_id: str) -> None:
@@ -1095,27 +1102,109 @@ async def preview_import_library(
         reader = csv.DictReader(io.StringIO(text))
         if not reader.fieldnames:
             raise HTTPException(status_code=400, detail="Empty or invalid CSV file")
-        for row in reader:
-            gid = _desanitize_csv_cell(row.get("gold_id", "").strip())
-            title = _desanitize_csv_cell(row.get("title", "").strip())
-            status_val = _desanitize_csv_cell(row.get("status", "").strip())
-            prog_str = _desanitize_csv_cell(row.get("progress", "").strip())
-            score_str = _desanitize_csv_cell(row.get("score", "").strip())
-            fav_str = _desanitize_csv_cell(row.get("favorite", "").strip().lower())
-            lists_str = _desanitize_csv_cell(row.get("lists", "").strip())
-            tags_str = _desanitize_csv_cell(row.get("private_tags", "").strip())
-            notes_val = _desanitize_csv_cell(row.get("notes", "").strip())
 
-            progress = int(prog_str) if prog_str.isdigit() else 0
-            score = float(score_str) if score_str else None
+        def _get_val(row_dict: dict, *aliases: str) -> str:
+            norm = {str(k).strip().lower(): v for k, v in row_dict.items() if k is not None}
+            for a in aliases:
+                v = norm.get(a.lower())
+                if v is not None and str(v).strip():
+                    return str(v).strip()
+            return ""
+
+        status_mapping = {
+            "reading": "reading", "1": "reading",
+            "completed": "completed", "2": "completed",
+            "on-hold": "paused", "on_hold": "paused", "on hold": "paused", "paused": "paused", "hold": "paused", "3": "paused",
+            "dropped": "dropped", "4": "dropped",
+            "plan to read": "planning", "plantoread": "planning", "planning": "planning", "plan": "planning", "6": "planning",
+            "re-reading": "re_reading", "rereading": "re_reading",
+        }
+
+        for row in reader:
+            raw_gid = _desanitize_csv_cell(_get_val(row, "gold_id", "id", "manga_id"))
+            title = _desanitize_csv_cell(_get_val(row, "title", "series_title", "manga_title", "name", "manga_name"))
+
+            # Check source URL columns for direct canonical Gold ID extraction
+            url_al = _get_val(row, "url_al", "anilist_url", "anilist")
+            url_mal = _get_val(row, "url_mal", "mal_url", "myanimelist")
+            url_mu = _get_val(row, "url_mu", "mangaupdates_url", "mangaupdates")
+            url_any = _get_val(row, "url", "link")
+
+            gid = raw_gid
+            if not gid:
+                # 1. Try AniList URL
+                target_al = url_al or (url_any if "anilist.co/manga/" in url_any else "")
+                if "anilist.co/manga/" in target_al:
+                    al_match = re.search(r"anilist\.co/manga/(\d+)", target_al)
+                    if al_match:
+                        gid = f"anilist:{al_match.group(1)}"
+
+                # 2. Try MyAnimeList URL
+                if not gid:
+                    target_mal = url_mal or (url_any if "myanimelist.net/manga/" in url_any else "")
+                    if "myanimelist.net/manga/" in target_mal:
+                        mal_match = re.search(r"myanimelist\.net/manga/(\d+)", target_mal)
+                        if mal_match:
+                            if _catalog_external_resolver:
+                                resolved = _catalog_external_resolver("mal", mal_match.group(1))
+                                if resolved:
+                                    gid = resolved
+                            if not gid:
+                                gid = f"mal:{mal_match.group(1)}"
+
+                # 3. Try MangaUpdates URL
+                if not gid:
+                    target_mu = url_mu or (url_any if "mangaupdates.com/series/" in url_any else "")
+                    if "mangaupdates.com/series/" in target_mu:
+                        mu_match = re.search(r"mangaupdates\.com/series/([a-zA-Z0-9]+)", target_mu)
+                        if mu_match:
+                            if _catalog_external_resolver:
+                                resolved = _catalog_external_resolver("mu", mu_match.group(1))
+                                if resolved:
+                                    gid = resolved
+                            if not gid:
+                                gid = f"mangaupdates:{mu_match.group(1)}"
+
+            # Status mapping
+            raw_status = _desanitize_csv_cell(_get_val(row, "folder", "status", "my_status", "state", "reading_status")).lower()
+            status_val = status_mapping.get(raw_status, "planning")
+
+            # Progress / Chapter parsing (supports floats like 35.000)
+            prog_raw = _desanitize_csv_cell(_get_val(row, "chapter", "progress", "chapters", "my_read_chapters", "read_chapters", "read"))
+            progress = 0
+            if prog_raw:
+                try:
+                    progress = max(0, int(float(prog_raw)))
+                except (ValueError, TypeError):
+                    progress = 0
+
+            # Score parsing
+            score_raw = _desanitize_csv_cell(_get_val(row, "score", "my_score", "rating", "user_score"))
+            score = None
+            if score_raw:
+                try:
+                    s_val = float(score_raw)
+                    if s_val > 0:
+                        score = s_val
+                except (ValueError, TypeError):
+                    score = None
+
+            # Favorite, lists, tags, notes
+            fav_str = _desanitize_csv_cell(_get_val(row, "favorite", "fav", "starred")).lower()
             favorite = fav_str in ("true", "1", "yes")
+
+            lists_str = _desanitize_csv_cell(_get_val(row, "lists", "custom_lists"))
             lists = [l.strip() for l in lists_str.split("|") if l.strip()] if lists_str else []
+
+            tags_str = _desanitize_csv_cell(_get_val(row, "private_tags", "tags"))
             tags = [t.strip().lower() for t in re.split(r"[,|]", tags_str) if t.strip()] if tags_str else []
+
+            notes_val = _desanitize_csv_cell(_get_val(row, "notes", "comments", "my_comments"))
 
             raw_items.append({
                 "gold_id": gid,
                 "title": title,
-                "status": status_val or "planning",
+                "status": status_val,
                 "progress": progress,
                 "score": score,
                 "notes": notes_val or None,
@@ -1146,6 +1235,16 @@ async def preview_import_library(
         elif title and _catalog_title_resolver:
             matched_gid = _catalog_title_resolver(title)
 
+        # Fallback 1: Check external resolver if available
+        if not matched_gid and gid and ":" in gid and _catalog_external_resolver:
+            prefix, ext_id = gid.split(":", 1)
+            matched_gid = _catalog_external_resolver(prefix, ext_id)
+
+        # Fallback 2: Valid formatted external Gold ID
+        if not matched_gid and gid and re.match(r"^(anilist|mal|mangadex|mangaupdates|custom):[a-zA-Z0-9_\-]+$", gid):
+            if _catalog_id_validator and _catalog_id_validator(gid):
+                matched_gid = gid
+
         if not matched_gid:
             skipped_rows.append({
                 "row": f"#{idx} {title or gid or 'Unknown'}",
@@ -1153,7 +1252,9 @@ async def preview_import_library(
             })
             continue
 
-        catalog_title = _catalog_title_getter(matched_gid) if _catalog_title_getter else title or matched_gid
+        catalog_title = _catalog_title_getter(matched_gid) if _catalog_title_getter else ""
+        if not catalog_title or catalog_title == matched_gid:
+            catalog_title = title or matched_gid
 
         valid_statuses = ("reading", "completed", "planning", "paused", "dropped", "re_reading")
         stat = str(item.get("status") or "planning").lower()

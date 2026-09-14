@@ -531,3 +531,40 @@ def test_import_malformed_xml(client: TestClient) -> None:
     assert "invalid xml format" in res_bad.json()["detail"].lower()
 
 
+def test_import_external_tracker_csv_format(client: TestClient) -> None:
+    _, token = _create_user(client, "tracker_csv_user", "tracker_csv@example.com")
+    headers = _auth_header(token)
+
+    csv_content = (
+        'title,chapter,folder,url_mal,url_al,url_mu\n'
+        '"One Piece",1100.000,Completed,https://myanimelist.net/manga/13,https://anilist.co/manga/21,https://mangaupdates.com/series/pb8uwds\n'
+        '"Berserk",64.500,Reading,https://myanimelist.net/manga/2,https://anilist.co/manga/30002,https://mangaupdates.com/series/f89nado\n'
+    ).encode("utf-8")
+
+    files = {"file": ("manga-list-tracker.csv", io.BytesIO(csv_content), "text/csv")}
+    prev_res = client.post("/auth/library/import/preview", files=files, headers=headers)
+    assert prev_res.status_code == 200
+    prev_data = prev_res.json()
+    assert prev_data["valid_rows"] == 2
+    assert prev_data["skipped_rows"] == []
+
+    commit_res = client.post(
+        "/auth/library/import/commit",
+        json={"preview_token": prev_data["preview_token"], "conflict_strategy": "replace_existing"},
+        headers=headers,
+    )
+    assert commit_res.status_code == 200
+
+    tracking_res = client.get("/auth/tracking", headers=headers).json()
+    assert tracking_res["count"] == 2
+    entries = {e["gold_id"]: e for e in tracking_res["entries"]}
+    assert "anilist:21" in entries
+    assert entries["anilist:21"]["status"] == "completed"
+    assert entries["anilist:21"]["progress"] == 1100
+
+    assert "anilist:30002" in entries
+    assert entries["anilist:30002"]["status"] == "reading"
+    assert entries["anilist:30002"]["progress"] == 64
+
+
+
