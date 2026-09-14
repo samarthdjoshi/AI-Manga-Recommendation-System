@@ -3,9 +3,6 @@ __pycache__/
 *.py[cod]
 *.pyo
 
-# Data (large, regenerable via scripts/ pipeline - never commit)
-data/
-
 # Virtual environments
 venv312/
 venv/
@@ -28,6 +25,24 @@ database/*.db-journal
 backend_log.txt
 logs/*.log
 *.bak
+
+# Large data directories & backups (never commit)
+data/bronze/
+data/silver/
+data/silver.backup*/
+data/features/
+data/checkpoints/
+data/gold_backup/
+data/gold.backup*/
+data/entity_resolution/
+
+# Large 1.1GB full FAISS index (local only, exceeds GitHub 100MB limit)
+data/model/similarity_index.faiss
+data/model/index_gold_ids.json
+
+# Ignore remaining gold pages beyond starter pages (keeping page_00000 and page_00001)
+data/gold/page_0000[2-9].json
+data/gold/page_000[1-9][0-9].json
 
 # Pytest & test cache
 .pytest_cache/

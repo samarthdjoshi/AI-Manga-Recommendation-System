@@ -118,9 +118,22 @@ class RecommenderService:
                 if ocl and ocl not in self._clean_title_to_gold_id:
                     self._clean_title_to_gold_id[ocl] = gid
 
-        self.index = faiss.read_index(str(model_dir / "similarity_index.faiss"))
-        with (model_dir / "index_gold_ids.json").open("r", encoding="utf-8") as f:
-            self.index_gold_ids: list[str] = json.load(f)
+        full_faiss = model_dir / "similarity_index.faiss"
+        full_ids = model_dir / "index_gold_ids.json"
+        starter_faiss = model_dir / "starter_index.faiss"
+        starter_ids = model_dir / "starter_index_gold_ids.json"
+
+        if full_faiss.exists() and full_ids.exists():
+            self.index = faiss.read_index(str(full_faiss))
+            with full_ids.open("r", encoding="utf-8") as f:
+                self.index_gold_ids: list[str] = json.load(f)
+        elif starter_faiss.exists() and starter_ids.exists():
+            self.index = faiss.read_index(str(starter_faiss))
+            with starter_ids.open("r", encoding="utf-8") as f:
+                self.index_gold_ids: list[str] = json.load(f)
+        else:
+            self.index = faiss.IndexFlatIP(867)
+            self.index_gold_ids: list[str] = []
 
         self.gold_id_to_row: dict[str, int] = {gid: i for i, gid in enumerate(self.index_gold_ids)}
 
