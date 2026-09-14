@@ -92,11 +92,23 @@ cors_origins = [
     for origin in settings.CORS_ALLOWED_ORIGINS.split(",")
     if origin.strip()
 ]
+default_origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:4173",
+    "http://127.0.0.1:4173",
+    "https://ai-manga-recommendation-system.vercel.app",
+]
+for o in default_origins:
+    if o not in cors_origins:
+        cors_origins.append(o)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins or ["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=cors_origins,
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE", "PUT", "PATCH", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
