@@ -22,7 +22,7 @@ import json
 import math
 from pathlib import Path
 
-from common.paths import SILVER_DIR
+from common.paths import SILVER_DIR, require_current_project_root
 
 SOURCES = ["anilist", "mangadex", "mangaupdates"]
 
@@ -72,6 +72,18 @@ def load_phase_b_groups() -> list[dict]:
     return data["groups"]
 
 
+def load_existing_official_links(gold_dir: Path) -> dict[str, dict]:
+    """Retain links added by the separate enrichment step during a Gold rebuild."""
+    links_by_gold_id: dict[str, dict] = {}
+    for page_file in sorted(gold_dir.glob("page_*.json")):
+        data = json.loads(page_file.read_text(encoding="utf-8"))
+        for record in data.get("records", []):
+            official_links = record.get("official_links")
+            if record.get("gold_id") and official_links:
+                links_by_gold_id[record["gold_id"]] = official_links
+    return links_by_gold_id
+
+
 def pick_priority(members_records: dict[str, dict], field: str, priority: list[str]):
     for source in priority:
         record = members_records.get(source)
@@ -79,6 +91,18 @@ def pick_priority(members_records: dict[str, dict], field: str, priority: list[s
             value = record.get(field)
             if value is not None and value != "":
                 return value, source
+    return None, None
+
+
+def pick_extra(
+    members_records: dict[str, dict], key: str, priority: list[str]
+) -> tuple[object | None, str | None]:
+    """Select a source-native metadata value from a normalized record's extra data."""
+    for source in priority:
+        extra = (members_records.get(source) or {}).get("extra") or {}
+        value = extra.get(key)
+        if value is not None and value != "" and value != []:
+            return value, source
     return None, None
 
 
@@ -180,6 +204,13 @@ def build_gold_record(group: dict, records_by_source: dict[str, dict[str, dict]]
     volumes, _ = pick_priority(members_records, "volumes", CURRENCY_PRIORITY)
     year, _ = pick_priority(members_records, "year", YEAR_PRIORITY)
     cover_image_url, cover_source = pick_priority(members_records, "cover_image_url", COVER_PRIORITY)
+    media_type, media_type_source = pick_extra(members_records, "type", ["mangaupdates"])
+    format_raw, format_source = pick_extra(members_records, "format", ["anilist"])
+    demographic, demographic_source = pick_extra(
+        members_records, "publication_demographic", ["mangadex"]
+    )
+    authors, authors_source = pick_extra(members_records, "authors", ["mangadex"])
+    artists, artists_source = pick_extra(members_records, "artists", ["mangadex"])
 
     genres = merge_genres(members_records)
     ratings = build_ratings(members_records)
@@ -204,6 +235,16 @@ def build_gold_record(group: dict, records_by_source: dict[str, dict[str, dict]]
         "genres": genres,
         "status_raw": status_raw,
         "status_source": status_source,
+        "media_type": media_type,
+        "media_type_source": media_type_source,
+        "format_raw": format_raw,
+        "format_source": format_source,
+        "demographic": demographic,
+        "demographic_source": demographic_source,
+        "authors": authors or [],
+        "authors_source": authors_source,
+        "artists": artists or [],
+        "artists_source": artists_source,
         "chapters": chapters,
         "volumes": volumes,
         "year": year,
@@ -215,6 +256,7 @@ def build_gold_record(group: dict, records_by_source: dict[str, dict[str, dict]]
 
 
 def main() -> None:
+    require_current_project_root()
     print("Loading Silver records for all sources...")
     records_by_source = {s: load_silver_records(s) for s in SOURCES}
     for s in SOURCES:
@@ -226,6 +268,8 @@ def main() -> None:
 
     gold_dir = SILVER_DIR.parent / "gold"
     gold_dir.mkdir(parents=True, exist_ok=True)
+    existing_official_links = load_existing_official_links(gold_dir)
+    print(f"Preserving official links for {len(existing_official_links)} existing Gold records.")
 
     print("Building Gold records...")
     gold_records = []
@@ -235,6 +279,9 @@ def main() -> None:
 
     for group in groups:
         gold_record = build_gold_record(group, records_by_source)
+        official_links = existing_official_links.get(gold_record["gold_id"])
+        if official_links:
+            gold_record["official_links"] = official_links
         gold_records.append(gold_record)
 
         confidence_counts[gold_record["match_confidence"]] = (

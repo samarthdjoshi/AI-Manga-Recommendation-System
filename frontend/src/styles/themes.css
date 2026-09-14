@@ -1,0 +1,280 @@
+/* Centralized Design Tokens & Theme Palettes for AI Manga Recommendation System */
+
+:root {
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-full: 9999px;
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* Default theme: Violet Night (Dark) */
+  --bg-base: #0a0a0f;
+  --bg-surface: #15151b;
+  --bg-surface-elevated: #1c1c24;
+  --bg-surface-muted: rgba(255, 255, 255, 0.04);
+  --border: #232330;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --text-primary: #e8e6f0;
+  --text-secondary: rgba(232, 230, 240, 0.7);
+  --text-muted: #8c899e;
+  --accent: #7c5cfc;
+  --accent-hover: #8f72ff;
+  --accent-soft: #241c3d;
+  --accent-foreground: #ffffff;
+  --teal: #4fd1c5;
+  --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  --scrollbar-thumb: #232330;
+  --is-dark: 1;
+}
+
+/* ========================================================== */
+/* DARK THEMES                                                */
+/* ========================================================== */
+
+/* 1. Violet Night (Default Dark) */
+[data-theme="violet-night"] {
+  --bg-base: #0a0a0f;
+  --bg-surface: #15151b;
+  --bg-surface-elevated: #1c1c24;
+  --bg-surface-muted: rgba(255, 255, 255, 0.04);
+  --border: #232330;
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --text-primary: #e8e6f0;
+  --text-secondary: rgba(232, 230, 240, 0.7);
+  --text-muted: #8c899e;
+  --accent: #7c5cfc;
+  --accent-hover: #8f72ff;
+  --accent-soft: #241c3d;
+  --accent-foreground: #ffffff;
+  --teal: #4fd1c5;
+  --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.5);
+  --scrollbar-thumb: #232330;
+  --is-dark: 1;
+}
+
+/* 2. Midnight (Deep Navy) */
+[data-theme="midnight"] {
+  --bg-base: #0b0f19;
+  --bg-surface: #111827;
+  --bg-surface-elevated: #1f2937;
+  --bg-surface-muted: rgba(255, 255, 255, 0.04);
+  --border: #283548;
+  --border-subtle: rgba(56, 189, 248, 0.1);
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #94a3b8;
+  --accent: #38bdf8;
+  --accent-hover: #0ea5e9;
+  --accent-soft: #0c2940;
+  --accent-foreground: #0b0f19;
+  --teal: #2dd4bf;
+  --card-shadow: 0 4px 20px -2px rgba(3, 7, 18, 0.6);
+  --scrollbar-thumb: #283548;
+  --is-dark: 1;
+}
+
+/* 3. Neon Tokyo (Futuristic Asphalt & Laser Magenta) */
+[data-theme="neon-tokyo"] {
+  --bg-base: #0c0d14;
+  --bg-surface: #151624;
+  --bg-surface-elevated: #1d1e32;
+  --bg-surface-muted: rgba(244, 63, 94, 0.05);
+  --border: #292b45;
+  --border-subtle: rgba(244, 63, 94, 0.15);
+  --text-primary: #f0f2fd;
+  --text-secondary: #c5c8e0;
+  --text-muted: #8a8ea8;
+  --accent: #f43f5e;
+  --accent-hover: #fb7185;
+  --accent-soft: #381324;
+  --accent-foreground: #ffffff;
+  --teal: #06b6d4;
+  --card-shadow: 0 4px 24px -2px rgba(244, 63, 94, 0.15);
+  --scrollbar-thumb: #292b45;
+  --is-dark: 1;
+}
+
+/* 4. Cyberpunk (Synthwave High-Energy) */
+[data-theme="cyberpunk"] {
+  --bg-base: #050508;
+  --bg-surface: #0e0f18;
+  --bg-surface-elevated: #171828;
+  --bg-surface-muted: rgba(6, 182, 212, 0.05);
+  --border: #2a2b42;
+  --border-subtle: rgba(250, 204, 21, 0.15);
+  --text-primary: #f8fafc;
+  --text-secondary: #cbd5e1;
+  --text-muted: #9ca3af;
+  --accent: #06b6d4;
+  --accent-hover: #22d3ee;
+  --accent-soft: #083344;
+  --accent-foreground: #050508;
+  --teal: #10b981;
+  --card-shadow: 0 4px 20px -2px rgba(6, 182, 212, 0.15);
+  --scrollbar-thumb: #2a2b42;
+  --is-dark: 1;
+}
+
+/* 5. Obsidian (Pure AMOLED Minimalist) */
+[data-theme="obsidian"] {
+  --bg-base: #000000;
+  --bg-surface: #0c0c0c;
+  --bg-surface-elevated: #161616;
+  --bg-surface-muted: rgba(255, 255, 255, 0.03);
+  --border: #222222;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --text-primary: #ededed;
+  --text-secondary: #b5b5b5;
+  --text-muted: #737373;
+  --accent: #10b981;
+  --accent-hover: #34d399;
+  --accent-soft: #052e22;
+  --accent-foreground: #000000;
+  --teal: #14b8a6;
+  --card-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.8);
+  --scrollbar-thumb: #222222;
+  --is-dark: 1;
+}
+
+/* ========================================================== */
+/* LIGHT THEMES                                               */
+/* ========================================================== */
+
+/* 6. Sakura (Soft Pink & Warm Ivory) */
+[data-theme="sakura"] {
+  --bg-base: #fff7f9;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #fff0f4;
+  --bg-surface-muted: #fde8ef;
+  --border: #fbcfe8;
+  --border-subtle: rgba(225, 29, 116, 0.08);
+  --text-primary: #2d1f28;
+  --text-secondary: #5c4353;
+  --text-muted: #9d7c92;
+  --accent: #db2777;
+  --accent-hover: #be185d;
+  --accent-soft: #fce7f3;
+  --accent-foreground: #ffffff;
+  --teal: #0d9488;
+  --card-shadow: 0 4px 18px -2px rgba(219, 39, 119, 0.08);
+  --scrollbar-thumb: #fbcfe8;
+  --is-dark: 0;
+}
+
+/* 7. Manga Paper (Editorial Ink & Hanko Seal) */
+[data-theme="manga-paper"] {
+  --bg-base: #f7f4ed;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f0ece1;
+  --bg-surface-muted: #e8e2d3;
+  --border: #dcd5c5;
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --text-primary: #121212;
+  --text-secondary: #3d3830;
+  --text-muted: #736b5e;
+  --accent: #c22026;
+  --accent-hover: #9e181d;
+  --accent-soft: #fae8e9;
+  --accent-foreground: #ffffff;
+  --teal: #0f766e;
+  --card-shadow: 0 4px 18px -2px rgba(0, 0, 0, 0.06);
+  --scrollbar-thumb: #dcd5c5;
+  --is-dark: 0;
+}
+
+/* 8. Lavender Dream (Pastel Violet Harmony) */
+[data-theme="lavender-dream"] {
+  --bg-base: #f8f6fd;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f1edfb;
+  --bg-surface-muted: #e7e0f8;
+  --border: #ded5f7;
+  --border-subtle: rgba(124, 58, 237, 0.08);
+  --text-primary: #23193c;
+  --text-secondary: #4a3e68;
+  --text-muted: #8578a5;
+  --accent: #7c3aed;
+  --accent-hover: #6d28d9;
+  --accent-soft: #ede9fe;
+  --accent-foreground: #ffffff;
+  --teal: #0d9488;
+  --card-shadow: 0 4px 18px -2px rgba(124, 58, 237, 0.08);
+  --scrollbar-thumb: #ded5f7;
+  --is-dark: 0;
+}
+
+/* 9. Sky (Clean Cerulean Airiness) */
+[data-theme="sky"] {
+  --bg-base: #f0f7ff;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #e0efff;
+  --bg-surface-muted: #d4e7fc;
+  --border: #bae0fd;
+  --border-subtle: rgba(2, 132, 199, 0.08);
+  --text-primary: #0f2338;
+  --text-secondary: #2b4560;
+  --text-muted: #627d98;
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-soft: #e0f2fe;
+  --accent-foreground: #ffffff;
+  --teal: #0891b2;
+  --card-shadow: 0 4px 18px -2px rgba(2, 132, 199, 0.08);
+  --scrollbar-thumb: #bae0fd;
+  --is-dark: 0;
+}
+
+/* 10. Ivory Gold (Luxury Linen & Champagne) */
+[data-theme="ivory-gold"] {
+  --bg-base: #fcfaf6;
+  --bg-surface: #ffffff;
+  --bg-surface-elevated: #f4f0e6;
+  --bg-surface-muted: #ebe5d6;
+  --border: #e2dad0;
+  --border-subtle: rgba(184, 134, 11, 0.08);
+  --text-primary: #29241e;
+  --text-secondary: #524a3e;
+  --text-muted: #8c8170;
+  --accent: #b8860b;
+  --accent-hover: #996f08;
+  --accent-soft: #fdf6e7;
+  --accent-foreground: #ffffff;
+  --teal: #0f766e;
+  --card-shadow: 0 4px 18px -2px rgba(184, 134, 11, 0.08);
+  --scrollbar-thumb: #e2dad0;
+  --is-dark: 0;
+}
+
+/* Base Body Styling */
+body {
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  transition: background-color var(--transition-normal), color var(--transition-normal);
+}
+
+/* Smooth Scrollbars in Themes */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: var(--radius-full);
+}
+
+/* Accessibility: Respect Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -1,4 +1,4 @@
-﻿# Python
+# Python
 __pycache__/
 *.py[cod]
 *.pyo
@@ -10,27 +10,37 @@ data/
 venv312/
 venv/
 .venv/
+.venv-g/
+.pip-tmp/
 
-# Build artifacts
+# Build artifacts & packages
 *.egg-info/
 build/
 dist/
+frontend/dist/
+frontend/dist-ssr/
+frontend/node_modules/
+node_modules/
 
-# Pytest
-.pytest_cache/
-
-# Logs
+# Local databases & logs
+database/*.db
+database/*.db-journal
+backend_log.txt
 logs/*.log
+*.bak
 
-# Environment
+# Pytest & test cache
+.pytest_cache/
+.ruff_cache/
+
+# Environment & Secrets
 .env
+.env.local
+.env.*.local
 
-# IDE
+# IDE & OS
 .vscode/
 .idea/
-
-# OS
 .DS_Store
 Thumbs.db
-
 scratch/

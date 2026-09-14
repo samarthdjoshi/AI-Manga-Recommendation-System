@@ -114,3 +114,21 @@ _REQUIRED_DIRECTORIES = (
 
 for directory in _REQUIRED_DIRECTORIES:
     directory.mkdir(parents=True, exist_ok=True)
+
+
+def require_current_project_root() -> None:
+    """Refuse destructive data builds if imports resolve to another project copy.
+
+    Silver and Gold builds overwrite generated catalog files.  Requiring the
+    shell's current directory to match the imported project's root prevents an
+    editable virtual environment pointing at an older clone from modifying it.
+    """
+    current_directory = Path.cwd().resolve()
+    resolved_project_root = PROJECT_ROOT.resolve()
+    if current_directory != resolved_project_root:
+        raise RuntimeError(
+            "Refusing data build: current directory "
+            f"{current_directory} does not match imported project root "
+            f"{resolved_project_root}. Activate the correct environment or run "
+            "the build from the intended project root."
+        )

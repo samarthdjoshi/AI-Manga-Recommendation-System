@@ -2,9 +2,22 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="referrer" content="no-referrer" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>frontend</title>
+    <title>MangaVerse — AI Manga Discovery & Recommendations</title>
+    <script>
+      (function() {
+        try {
+          var appearance = localStorage.getItem("manga_appearance") || "system";
+          var storedTheme = localStorage.getItem("manga_theme");
+          var isSystemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var effectiveMode = appearance === "system" ? (isSystemDark ? "dark" : "light") : appearance;
+          var theme = storedTheme || (effectiveMode === "light" ? "sakura" : "violet-night");
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

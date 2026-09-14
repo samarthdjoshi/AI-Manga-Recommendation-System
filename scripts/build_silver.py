@@ -17,6 +17,7 @@ from common.paths import (
     MANGADEX_BRONZE_DIR,
     MANGAUPDATES_BRONZE_DIR,
     SILVER_DIR,
+    require_current_project_root,
 )
 
 from ml.ingestion.metadata import MetadataWriter
@@ -76,6 +77,7 @@ def build_source(
 
 
 def main() -> None:
+    require_current_project_root()
     build_source(
         name="anilist",
         bronze_dir=ANILIST_BRONZE_DIR,

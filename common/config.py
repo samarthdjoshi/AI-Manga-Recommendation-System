@@ -1,4 +1,4 @@
-"""
+﻿"""
 Centralized application configuration.
 
 Configuration values are loaded from environment variables
@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -52,6 +52,11 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
 
     DEBUG: bool = True
+
+    # Comma-separated browser origins permitted to call the API.  Keep this
+    # explicit: authenticated APIs must not accept credentialed requests from
+    # arbitrary websites.
+    CORS_ALLOWED_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173"
 
     # ======================================================
     # API
@@ -96,6 +101,37 @@ class Settings(BaseSettings):
     # ======================================================
 
     DATABASE_URL: str = "sqlite:///database/app.db"
+
+    # ======================================================
+    # Authentication / JWT
+    # ======================================================
+    JWT_SECRET_KEY: str = "dev-only-secret-change-me-in-.env"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRE_DAYS: int = 30
+
+    # ======================================================
+    # Gemini API (AI chatbot)
+    # ======================================================
+    GEMINI_API_KEY: str = ""
+
+    @property
+    def cors_allowed_origins(self) -> list[str]:
+        """Return normalized, non-empty CORS origins from environment config."""
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.CORS_ALLOWED_ORIGINS.split(",")
+            if origin.strip()
+        ]
+
+    @model_validator(mode="after")
+    def validate_production_secrets(self) -> Settings:
+        """Prevent accidentally deploying with the documented development key."""
+        if self.APP_ENV.lower() == "production":
+            if self.JWT_SECRET_KEY == "dev-only-secret-change-me-in-.env":
+                raise ValueError("JWT_SECRET_KEY must be changed for production")
+            if not self.cors_allowed_origins or "*" in self.cors_allowed_origins:
+                raise ValueError("CORS_ALLOWED_ORIGINS must list explicit production origins")
+        return self
 
 
 @lru_cache(maxsize=1)

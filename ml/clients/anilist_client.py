@@ -6,6 +6,7 @@ from ml.clients.queries import (
     MANGA_PAGE_QUERY,
     MAX_MANGA_ID_QUERY,
     MEDIA_BATCH_QUERY,
+    EXTERNAL_LINKS_BATCH_QUERY,
 )
 
 
@@ -74,6 +75,23 @@ class AniListClient(BaseAPIClient):
             }
         )
 
+        return response.json()
+
+    def get_external_links_batch(self, ids: list[int]) -> dict:
+        """
+        Look up externalLinks only, for many manga IDs in one request.
+        Used for targeted enrichment of an already-populated gold
+        catalog, not full re-collection.
+        """
+        response = self.post(
+            json={
+                "query": EXTERNAL_LINKS_BATCH_QUERY,
+                "variables": {
+                    "ids": ids,
+                    "perPage": len(ids),
+                },
+            }
+        )
         return response.json()
 
     @staticmethod

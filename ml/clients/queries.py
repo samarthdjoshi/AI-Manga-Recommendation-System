@@ -104,3 +104,23 @@ query ($ids: [Int], $perPage: Int) {
 }
 """
 
+
+# Batch lookup for externalLinks only (official/legal reading platforms
+# per title, e.g. Viz, Shonen Jump). Deliberately excludes MEDIA_FIELDS -
+# this is a targeted enrichment pass over an existing gold catalog, not
+# a full re-fetch, so we only request the one field we are missing.
+EXTERNAL_LINKS_BATCH_QUERY = """
+query ($ids: [Int], $perPage: Int) {
+  Page(page: 1, perPage: $perPage) {
+    media(id_in: $ids, type: MANGA) {
+      id
+      externalLinks {
+        url
+        site
+        type
+        language
+      }
+    }
+  }
+}
+"""

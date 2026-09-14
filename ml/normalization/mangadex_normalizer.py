@@ -52,6 +52,20 @@ def _resolve_cover_url(record: dict) -> str | None:
     return None
 
 
+def _relationship_names(record: dict, relationship_type: str) -> list[str]:
+    """Extract named MangaDex contributors without guessing missing names."""
+    names: list[str] = []
+    seen: set[str] = set()
+    for relationship in record.get("relationships", []) or []:
+        if relationship.get("type") != relationship_type:
+            continue
+        name = (relationship.get("attributes") or {}).get("name")
+        if isinstance(name, str) and name.strip() and name not in seen:
+            names.append(name)
+            seen.add(name)
+    return names
+
+
 def normalize_mangadex_record(record: dict) -> UnifiedMangaRecord:
     attributes = record.get("attributes", {}) or {}
     manga_id = record.get("id")
@@ -78,6 +92,8 @@ def normalize_mangadex_record(record: dict) -> UnifiedMangaRecord:
             "content_rating": attributes.get("contentRating"),
             "publication_demographic": attributes.get("publicationDemographic"),
             "original_language": attributes.get("originalLanguage"),
+            "authors": _relationship_names(record, "author"),
+            "artists": _relationship_names(record, "artist"),
             "links": attributes.get("links") or {},
         },
     )
