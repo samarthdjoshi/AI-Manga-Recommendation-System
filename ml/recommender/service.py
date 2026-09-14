@@ -8,9 +8,12 @@ exactly one tested place.
 from __future__ import annotations
 
 from collections import defaultdict
+import gzip
+import html
 import json
 import re
 from typing import ClassVar
+import unicodedata
 
 import faiss
 import numpy as np
@@ -146,6 +149,24 @@ class RecommenderService:
             if mu_id:
                 self._mangaupdates_id_to_gold_id[mu_id] = gid
 
+        # Load precompiled alternative titles, synonyms, and MAL ID mappings if present
+        alt_titles_path = SILVER_DIR.parent / "alternative_titles.json.gz"
+        if alt_titles_path.exists():
+            try:
+                with gzip.open(alt_titles_path, "rt", encoding="utf-8") as f:
+                    alt_data = json.load(f)
+                    for m_id, g_id in alt_data.get("mal_to_gold", {}).items():
+                        if m_id not in self._mal_id_to_gold_id:
+                            self._mal_id_to_gold_id[m_id] = g_id
+                    for t_k, g_id in alt_data.get("title_to_gold", {}).items():
+                        if t_k not in self._title_to_gold_id:
+                            self._title_to_gold_id[t_k] = g_id
+                    for c_k, g_id in alt_data.get("clean_to_gold", {}).items():
+                        if c_k not in self._clean_title_to_gold_id:
+                            self._clean_title_to_gold_id[c_k] = g_id
+            except Exception as e:
+                print(f"Warning: could not load alternative_titles.json.gz: {e}")
+
         full_faiss = model_dir / "similarity_index.faiss"
         full_ids = model_dir / "index_gold_ids.json"
         starter_faiss = model_dir / "starter_index.faiss"
@@ -204,22 +225,81 @@ class RecommenderService:
         tl = display_title.strip().lower()
         if tl not in self._title_to_gold_id:
             self._title_to_gold_id[tl] = gold_id
+        cl = re.sub(r"[^a-zA-Z0-9\s]", " ", display_title).lower().strip()
+        cl = re.sub(r"\s+", " ", cl).strip()
+        if cl and cl not in self._clean_title_to_gold_id:
+            self._clean_title_to_gold_id[cl] = gold_id
+        if gold_id.startswith("mal:"):
+            mid = gold_id.split("mal:")[-1]
+            if mid not in self._mal_id_to_gold_id:
+                self._mal_id_to_gold_id[mid] = gold_id
         return new_rec
 
     def resolve_title_to_gold_id(self, title: str) -> str | None:
-        """Resolve a manga title or clean title variant to a canonical gold_id in O(1)."""
+        """Resolve any title variation (Romaji, English, native, clean, subtitle split, alternative) to a canonical gold_id."""
         if not title:
             return None
-        tl = title.strip().lower()
+        t_raw = html.unescape(title).strip()
+        tl = t_raw.lower()
+
+        # 1. Exact match
         if tl in self._title_to_gold_id:
             return self._title_to_gold_id[tl]
-        cl = re.sub(r"[^a-zA-Z0-9\s]", "", title).lower().strip()
+
+        # 2. Normalized clean alphanumeric match (strips punctuation and accents)
+        cl = "".join(c for c in unicodedata.normalize("NFD", t_raw) if unicodedata.category(c) != "Mn")
+        cl = re.sub(r"[^a-zA-Z0-9\s]", " ", cl).lower().strip()
+        cl = re.sub(r"\s+", " ", cl).strip()
         if cl in self._clean_title_to_gold_id:
             return self._clean_title_to_gold_id[cl]
-        if tl.startswith("the "):
-            t_sub = tl[4:].strip()
-            if t_sub in self._title_to_gold_id:
-                return self._title_to_gold_id[t_sub]
+
+        # 3. Leading articles toggle (the, a, an)
+        for art in ("the ", "a ", "an "):
+            if tl.startswith(art):
+                t_sub = tl[len(art):].strip()
+                if t_sub in self._title_to_gold_id:
+                    return self._title_to_gold_id[t_sub]
+                cl_sub = re.sub(r"[^a-zA-Z0-9\s]", " ", t_sub).lower().strip()
+                cl_sub = re.sub(r"\s+", " ", cl_sub).strip()
+                if cl_sub in self._clean_title_to_gold_id:
+                    return self._clean_title_to_gold_id[cl_sub]
+            else:
+                t_art = art + tl
+                if t_art in self._title_to_gold_id:
+                    return self._title_to_gold_id[t_art]
+
+        # 4. Subtitle splits before :, -, ~, —, /
+        for sep in (":", "-", "~", "—", "/"):
+            if sep in t_raw:
+                part = t_raw.split(sep)[0].strip()
+                if len(part) >= 4:
+                    if part.lower() in self._title_to_gold_id:
+                        return self._title_to_gold_id[part.lower()]
+                    cl_part = "".join(c for c in unicodedata.normalize("NFD", part) if unicodedata.category(c) != "Mn")
+                    cl_part = re.sub(r"[^a-zA-Z0-9\s]", " ", cl_part).lower().strip()
+                    cl_part = re.sub(r"\s+", " ", cl_part).strip()
+                    if cl_part in self._clean_title_to_gold_id:
+                        return self._clean_title_to_gold_id[cl_part]
+
+        # 5. Parentheses removal (e.g. "Title (Manga)" -> "Title")
+        no_paren = re.sub(r"\([^)]*\)|\[[^\]]*\]", "", t_raw).strip()
+        if no_paren != t_raw and len(no_paren) >= 4:
+            if no_paren.lower() in self._title_to_gold_id:
+                return self._title_to_gold_id[no_paren.lower()]
+            cl_paren = "".join(c for c in unicodedata.normalize("NFD", no_paren) if unicodedata.category(c) != "Mn")
+            cl_paren = re.sub(r"[^a-zA-Z0-9\s]", " ", cl_paren).lower().strip()
+            cl_paren = re.sub(r"\s+", " ", cl_paren).strip()
+            if cl_paren in self._clean_title_to_gold_id:
+                return self._clean_title_to_gold_id[cl_paren]
+
+        # 6. Fallback prefix/word search for high-confidence candidate
+        candidates = self.search(t_raw[:30], limit=3)
+        if candidates:
+            top = candidates[0]
+            top_t = (top.get("title") or "").lower().strip()
+            if top_t == tl or (len(tl) >= 6 and (top_t.startswith(tl) or tl.startswith(top_t))):
+                return top.get("gold_id")
+
         return None
 
     @property

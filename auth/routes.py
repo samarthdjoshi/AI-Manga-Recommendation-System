@@ -5,6 +5,7 @@ Authentication endpoints: register, login, and get-current-user.
 from __future__ import annotations
 
 import csv
+import html
 import io
 import json
 import re
@@ -116,10 +117,23 @@ def configure_catalog_external_resolver(resolver: Callable[[str, str], str | Non
     _catalog_external_resolver = resolver
 
 
+def _safe_validate_catalog_id(gold_id: str, title: str | None = None, allow_create: bool = False) -> bool:
+    """Validate a gold_id in the catalog, only creating if allow_create is True."""
+    if _catalog_id_validator is None:
+        return False
+    try:
+        return _catalog_id_validator(gold_id, title, allow_create)  # type: ignore[call-arg]
+    except TypeError:
+        try:
+            return _catalog_id_validator(gold_id, title)  # type: ignore[call-arg]
+        except TypeError:
+            return _catalog_id_validator(gold_id)
+
+
 def _require_catalog_id(gold_id: str) -> None:
     if _catalog_id_validator is None:
         raise HTTPException(status_code=503, detail="Catalog service is still starting up")
-    if not _catalog_id_validator(gold_id):
+    if not _safe_validate_catalog_id(gold_id, allow_create=False):
         raise HTTPException(status_code=404, detail="Manga not found")
 
 
@@ -1050,11 +1064,24 @@ async def preview_import_library(
                 gid_node = node.find("gold_id")
                 if gid_node is not None and gid_node.text:
                     gid = gid_node.text.strip()
+
+                # Extract MAL ID / external series IDs from MAL XML export
+                for mal_tag in ("manga_mangadb_id", "mal_id", "series_id", "manga_id", "id"):
+                    m_el = node.find(mal_tag)
+                    if m_el is not None and m_el.text and m_el.text.strip():
+                        val = m_el.text.strip()
+                        if val.isdigit() and not gid:
+                            gid = f"mal:{val}"
+                            break
+                        elif ":" in val and not gid:
+                            gid = val
+                            break
+
                 title = ""
                 for tag_name in ("manga_title", "title", "series_title", "name"):
                     t_el = node.find(tag_name)
                     if t_el is not None and t_el.text and t_el.text.strip():
-                        title = t_el.text.strip()
+                        title = html.unescape(t_el.text.strip())
                         break
 
                 raw_stat = ""
@@ -1230,19 +1257,21 @@ async def preview_import_library(
         title = str(item.get("title") or "").strip()
 
         matched_gid: str | None = None
-        if gid and _catalog_id_validator and _catalog_id_validator(gid):
+        if gid and _safe_validate_catalog_id(gid, title):
             matched_gid = gid
-        elif title and _catalog_title_resolver:
-            matched_gid = _catalog_title_resolver(title)
 
-        # Fallback 1: Check external resolver if available
+        # Priority 1: Check external ID resolver (e.g. mal:151150)
         if not matched_gid and gid and ":" in gid and _catalog_external_resolver:
             prefix, ext_id = gid.split(":", 1)
             matched_gid = _catalog_external_resolver(prefix, ext_id)
 
-        # Fallback 2: Valid formatted external Gold ID
+        # Priority 2: Comprehensive title resolver (matches all 857,000+ title variants, Romaji, English, clean, subtitle splits)
+        if not matched_gid and title and _catalog_title_resolver:
+            matched_gid = _catalog_title_resolver(title)
+
+        # Fallback: Valid formatted external Gold ID (e.g. mal:182242) -> ensure record so it's never skipped
         if not matched_gid and gid and re.match(r"^(anilist|mal|mangadex|mangaupdates|custom):[a-zA-Z0-9_\-]+$", gid):
-            if _catalog_id_validator and _catalog_id_validator(gid):
+            if _safe_validate_catalog_id(gid, title, allow_create=True):
                 matched_gid = gid
 
         if not matched_gid:

@@ -11,6 +11,7 @@ import pytest
 
 import api.main as api_main
 from auth.routes import (
+    configure_catalog_external_resolver,
     configure_catalog_id_validator,
     configure_catalog_title_getter,
     configure_catalog_title_resolver,
@@ -367,6 +368,42 @@ class ContractCatalog:
         matches = [r for r in self.records if r["title"].lower() in text_lower]
         return matches[:limit]
 
+    def __init__(self) -> None:
+        self.records = [dict(r) for r in self.__class__.records]
+        self.records_by_gold_id = {r["gold_id"]: r for r in self.records}
+
+    def ensure_catalog_record(self, gold_id: str, title: str | None = None) -> dict:
+        if gold_id in self.records_by_gold_id:
+            rec = self.records_by_gold_id[gold_id]
+            if title and (not rec.get("title") or rec.get("title") == gold_id):
+                rec["title"] = title
+            return rec
+        new_rec = {
+            "gold_id": gold_id,
+            "title": title or gold_id,
+            "original_title": None,
+            "cover_image_url": None,
+            "year": 2020,
+            "rating_combined": 8.0,
+            "genres": ["Action"],
+            "sources": [gold_id.split(":")[0]] if ":" in gold_id else ["external"],
+            "source_count": 1,
+            "match_confidence": "external",
+            "chapters": 0,
+        }
+        self.records.append(new_rec)
+        self.records_by_gold_id[gold_id] = new_rec
+        return new_rec
+
+    def resolve_external_id_to_gold_id(self, source: str, ext_id: str) -> str | None:
+        src = (source or "").strip().lower()
+        eid = str(ext_id or "").strip()
+        for gid, r in self.records_by_gold_id.items():
+            sids = r.get("source_ids") or {}
+            if src in ("mal", "myanimelist") and str(sids.get("myanimelist") or "") == eid:
+                return gid
+        return None
+
     def resolve_title_to_gold_id(self, title: str) -> str | None:
         if not title:
             return None
@@ -379,15 +416,21 @@ class ContractCatalog:
 
 @pytest.fixture(autouse=True)
 def contract_catalog(monkeypatch: pytest.MonkeyPatch) -> ContractCatalog:
+    import re
     catalog = ContractCatalog()
     monkeypatch.setattr(api_main, "service", catalog)
-    configure_catalog_id_validator(lambda gold_id: gold_id in catalog.records_by_gold_id)
-    configure_catalog_title_resolver(
-        lambda title: next(
-            (gid for gid, r in catalog.records_by_gold_id.items() if (r.get("title") or "").strip().lower() == title.strip().lower()),
-            None,
-        )
-    )
+
+    def _validator(gid: str, title: str | None = None, allow_create: bool = False) -> bool:
+        if gid in catalog.records_by_gold_id:
+            return True
+        if allow_create and re.match(r"^(anilist|mal|mangadex|mangaupdates|custom):[a-zA-Z0-9_\-]+$", str(gid).strip()):
+            catalog.ensure_catalog_record(gid, title)
+            return True
+        return False
+
+    configure_catalog_id_validator(_validator)
+    configure_catalog_title_resolver(catalog.resolve_title_to_gold_id)
+    configure_catalog_external_resolver(catalog.resolve_external_id_to_gold_id)
     configure_catalog_title_getter(
         lambda gid: catalog.records_by_gold_id.get(gid, {}).get("title", "")
     )

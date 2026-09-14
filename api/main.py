@@ -66,11 +66,13 @@ async def lifespan(app: FastAPI):
     
     import re
 
-    def _catalog_validator(gid: str) -> bool:
+    def _catalog_validator(gid: str, title: str | None = None, allow_create: bool = False) -> bool:
         if gid in service.records_by_gold_id:
+            if title and (not service.records_by_gold_id[gid].get("title") or service.records_by_gold_id[gid].get("title") == gid):
+                service.records_by_gold_id[gid]["title"] = title
             return True
-        if hasattr(service, "ensure_catalog_record") and re.match(r"^(anilist|mal|mangadex|mangaupdates|custom):[a-zA-Z0-9_\-]+$", str(gid).strip()):
-            service.ensure_catalog_record(gid)
+        if allow_create and hasattr(service, "ensure_catalog_record") and re.match(r"^(anilist|mal|mangadex|mangaupdates|custom):[a-zA-Z0-9_\-]+$", str(gid).strip()):
+            service.ensure_catalog_record(gid, title)
             return True
         return False
 

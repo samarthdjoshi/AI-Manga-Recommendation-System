@@ -567,4 +567,58 @@ def test_import_external_tracker_csv_format(client: TestClient) -> None:
     assert entries["anilist:30002"]["progress"] == 64
 
 
+def test_import_user_mal_export_xml_format(client: TestClient) -> None:
+    _, token = _create_user(client, "mal_xml_user", "mal_xml@example.com")
+    headers = _auth_header(token)
+
+    # Standard MyAnimeList XML export format with CDATA, float chapters, and MAL IDs
+    mal_xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<myanimelist>\n'
+        '  <myinfo><user_export_type>2</user_export_type></myinfo>\n'
+        '  <manga>\n'
+        '    <manga_mangadb_id>151150</manga_mangadb_id>\n'
+        '    <manga_title><![CDATA[ A Middle-Aged Man Who Returns from Another World Goes Back to When He was 17 and becomes Unbeatable ]]></manga_title>\n'
+        '    <my_read_chapters>35.000</my_read_chapters>\n'
+        '    <my_status>Completed</my_status>\n'
+        '    <my_score>8</my_score>\n'
+        '  </manga>\n'
+        '  <manga>\n'
+        '    <manga_mangadb_id>167016</manga_mangadb_id>\n'
+        '    <manga_title><![CDATA[ Until the Tragic Male Lead Walks Again ]]></manga_title>\n'
+        '    <my_read_chapters>64.000</my_read_chapters>\n'
+        '    <my_status>Reading</my_status>\n'
+        '    <my_score>0</my_score>\n'
+        '  </manga>\n'
+        '</myanimelist>\n'
+    ).encode("utf-8")
+
+    files = {"file": ("manga-list-2026-09-13.xml", io.BytesIO(mal_xml), "application/xml")}
+    prev_res = client.post("/auth/library/import/preview", files=files, headers=headers)
+    assert prev_res.status_code == 200
+    prev_data = prev_res.json()
+    assert prev_data["total_rows"] == 2
+    assert prev_data["valid_rows"] == 2
+    assert prev_data["skipped_rows"] == []
+
+    commit_res = client.post(
+        "/auth/library/import/commit",
+        json={"preview_token": prev_data["preview_token"], "conflict_strategy": "keep_existing"},
+        headers=headers,
+    )
+    assert commit_res.status_code == 200
+
+    tracking_res = client.get("/auth/tracking", headers=headers).json()
+    assert tracking_res["count"] == 2
+    by_status = {e["gold_id"]: e for e in tracking_res["entries"]}
+    # Verify values properly mapped
+    for gid, entry in by_status.items():
+        if entry["progress"] == 35:
+            assert entry["status"] == "completed"
+            assert entry["score"] == 8.0
+        elif entry["progress"] == 64:
+            assert entry["status"] == "reading"
+
+
+
 
