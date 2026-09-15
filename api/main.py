@@ -60,6 +60,7 @@ from ml.recommender.service import EXPLICIT_GENRES, MangaNotFoundError, Recommen
 
 service: RecommenderService | None = None
 chat_retriever = None
+chat_retriever_initialized = False
 chat_retriever_lock = threading.Lock()
 optional_bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -213,18 +214,29 @@ def get_service() -> RecommenderService:
 
 
 def get_chat_retriever():
-    global chat_retriever
-    if chat_retriever is not None:
+    global chat_retriever, chat_retriever_initialized
+    if chat_retriever_initialized:
         return chat_retriever
 
     with chat_retriever_lock:
-        if chat_retriever is None:
-            try:
-                from ml.recommender.chat_retrieval import ChatRetriever
-                chat_retriever = ChatRetriever()
-            except Exception as exc:
-                print(f"[chat] Semantic retriever initialization failed ({type(exc).__name__}: {exc}). Using catalog search fallback.")
+        if chat_retriever_initialized:
+            return chat_retriever
+        chat_retriever_initialized = True
+        try:
+            from common.paths import SILVER_DIR
+            features_dir = SILVER_DIR.parent / "features"
+            emb_file = features_dir / "description_embeddings.npy"
+            if not emb_file.exists():
+                print("[chat] description_embeddings.npy not present on disk. Using catalog search.")
+                chat_retriever = None
                 return None
+
+            from ml.recommender.chat_retrieval import ChatRetriever
+            chat_retriever = ChatRetriever()
+        except Exception as exc:
+            print(f"[chat] Semantic retriever initialization failed ({type(exc).__name__}: {exc}). Using catalog search fallback.")
+            chat_retriever = None
+            return None
     return chat_retriever
 
 
