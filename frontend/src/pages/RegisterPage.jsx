@@ -22,13 +22,21 @@ export default function RegisterPage() {
       navigate("/");
     } catch (err) {
       const detail = err.response?.data?.detail;
-      setError(detail || "Couldn't create an account. Please check your details.");
+      if (err.code === "ECONNABORTED" || !err.response) {
+        setError("The server was waking up from idle. Please click 'Create Account' again to finish.");
+      } else {
+        setError(detail || "Couldn't create an account. Please check your details.");
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
-  const isAlreadyRegistered = error && error.toLowerCase().includes("already registered");
+  const isAlreadyRegistered =
+    error &&
+    (error.toLowerCase().includes("already registered") ||
+      error.toLowerCase().includes("already taken") ||
+      error.toLowerCase().includes("email already"));
 
   return (
     <div className="max-w-md mx-auto mt-10 sm:mt-16 px-4">
@@ -122,9 +130,16 @@ export default function RegisterPage() {
             type="submit"
             disabled={submitting}
             className="w-full rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white
-                       hover:bg-accentHover transition shadow-md shadow-accent/25 disabled:opacity-50"
+                       hover:bg-accentHover transition shadow-md shadow-accent/25 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {submitting ? "Creating account..." : "Create Account"}
+            {submitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Connecting to server...</span>
+              </>
+            ) : (
+              "Create Account"
+            )}
           </button>
         </form>
 

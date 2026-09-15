@@ -5,7 +5,7 @@ const API_BASE_URL =
 
 const client = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 60000,
 });
 
 const chatClient = axios.create({
@@ -109,13 +109,20 @@ export async function registerUser({ email, username, password }) {
 }
 
 export async function loginUser({ email, password }) {
-  const response = await client.post("/auth/login", { email, password });
+  const loginIdentifier = email ? email.trim() : "";
+  const response = await client.post("/auth/login", {
+    email: loginIdentifier,
+    username: loginIdentifier,
+    password,
+  });
   return response.data;
 }
 
 export async function resetPassword({ email, newPassword }) {
+  const identifier = email ? email.trim() : "";
   const response = await client.post("/auth/reset-password", {
-    email,
+    email: identifier,
+    username: identifier,
     new_password: newPassword,
   });
   return response.data;

@@ -36,12 +36,16 @@ export default function LoginPage() {
         navigate("/");
       }
     } catch (err) {
-      setError(
-        err.response?.data?.detail ||
-          (isResetMode
-            ? "Couldn't reset password. Please check your email or username."
-            : "Invalid email/username or password. Check your credentials.")
-      );
+      if (err.code === "ECONNABORTED" || !err.response) {
+        setError("The server was waking up from idle. Please click 'Log In' again to connect.");
+      } else {
+        setError(
+          err.response?.data?.detail ||
+            (isResetMode
+              ? "Couldn't reset password. Please check your email or username."
+              : "Invalid email/username or password. Check your credentials.")
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -158,15 +162,20 @@ export default function LoginPage() {
             type="submit"
             disabled={submitting}
             className="w-full rounded-xl bg-accent px-4 py-3 text-sm font-bold text-white
-                       hover:bg-accentHover transition shadow-md shadow-accent/25 disabled:opacity-50"
+                       hover:bg-accentHover transition shadow-md shadow-accent/25 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {submitting
-              ? isResetMode
-                ? "Resetting password..."
-                : "Logging in..."
-              : isResetMode
-              ? "Reset & Log In"
-              : "Log In"}
+            {submitting ? (
+              <>
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>
+                  {isResetMode ? "Connecting to server..." : "Logging in..."}
+                </span>
+              </>
+            ) : isResetMode ? (
+              "Reset & Log In"
+            ) : (
+              "Log In"
+            )}
           </button>
 
           {isResetMode && (
