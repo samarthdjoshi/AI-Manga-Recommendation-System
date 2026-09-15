@@ -283,18 +283,22 @@ class Notification(Base):
     actor: Mapped["User"] = relationship(foreign_keys=[actor_id])
 
 
-# SQLite-specific: DATABASE_URL is "sqlite:///database/app.db" - the
-# "database" directory must exist before SQLite can create the file
-# inside it, since SQLite does not create parent directories itself.
-_db_path_part = settings.DATABASE_URL.split("///")[-1]
-if _db_path_part and not _db_path_part.startswith(":memory:"):
-    from pathlib import Path
+# Normalize database URL for SQLAlchemy 2.0 (handles "postgres://" from Render/Supabase)
+db_url = settings.DATABASE_URL
+if db_url.startswith("postgres://"):
+    db_url = db_url.replace("postgres://", "postgresql://", 1)
 
-    Path(_db_path_part).parent.mkdir(parents=True, exist_ok=True)
+# SQLite-specific directory creation
+if db_url.startswith("sqlite"):
+    _db_path_part = db_url.split("///")[-1]
+    if _db_path_part and not _db_path_part.startswith(":memory:"):
+        from pathlib import Path
+        Path(_db_path_part).parent.mkdir(parents=True, exist_ok=True)
 
 engine = create_engine(
-    settings.DATABASE_URL,
-    connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},
+    db_url,
+    connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
+    pool_pre_ping=True,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
