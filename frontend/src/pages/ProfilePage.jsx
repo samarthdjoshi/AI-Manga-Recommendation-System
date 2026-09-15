@@ -5,7 +5,7 @@ import LoadingSpinner from "../components/LoadingSpinner";
 import ActivityFeed from "../components/ActivityFeed";
 import ProfileEditModal from "../components/ProfileEditModal";
 import {
-  getManga,
+  getMangaBatch,
   listFavorites,
   listTracking,
   getMyProfile,
@@ -80,9 +80,8 @@ export default function ProfilePage() {
             ...favData.favorites.map((favorite) => favorite.gold_id),
           ]),
         ];
-        const titles = await Promise.all(ids.map((id) => getManga(id).catch(() => null)));
+        const byId = await getMangaBatch(ids);
         if (cancelled) return;
-        const byId = Object.fromEntries(titles.filter(Boolean).map((title) => [title.gold_id, title]));
 
         setTracking(
           trackData.entries

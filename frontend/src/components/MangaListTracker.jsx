@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { Link } from "react-router-dom";
+import { bulkDeleteLibrary } from "../api/client";
 
 function formatScoreBySystem(score, system = "point_10_decimal") {
   if (score == null) return "—";
@@ -44,10 +45,17 @@ export default function MangaListTracker({
   isOwner = false,
   onIncrement = null,
   incrementingId = null,
+  onRemoveTitles = null,
 }) {
   const [activeStatus, setActiveStatus] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [sortBy, setSortBy] = useState("updated");
+
+  // Manage mode for owner
+  const [manageMode, setManageMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   // View mode persistence: "detailed" | "compact" | "covers"
   const [viewMode, setViewMode] = useState(() => {
@@ -66,6 +74,43 @@ export default function MangaListTracker({
       // ignore
     }
   }
+
+  const handleToggleSelect = (goldId) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(goldId)) next.delete(goldId);
+      else next.add(goldId);
+      return next;
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === processedEntries.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(processedEntries.map((e) => e.gold_id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setDeleteBusy(true);
+    try {
+      const token = localStorage.getItem("token");
+      const ids = [...selectedIds];
+      await bulkDeleteLibrary(ids, token);
+      if (onRemoveTitles) {
+        onRemoveTitles(ids);
+      }
+      setSelectedIds(new Set());
+      setManageMode(false);
+      setDeleteConfirmOpen(false);
+    } catch (err) {
+      console.error("Failed to remove titles:", err);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   // Filter & Sort
   const processedEntries = useMemo(() => {
@@ -253,8 +298,60 @@ export default function MangaListTracker({
               </svg>
             </button>
           </div>
+
+          {/* Manage Mode Toggle Button (Owner only) */}
+          {isOwner && (
+            <button
+              type="button"
+              onClick={() => {
+                setManageMode((v) => !v);
+                setSelectedIds(new Set());
+              }}
+              className={`h-11 px-3.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0 shadow-sm ${
+                manageMode
+                  ? "bg-accent text-accentFg border-accent font-black shadow-accent/20"
+                  : "bg-surfaceHover border-border text-foreground hover:border-accent"
+              }`}
+              title="Toggle select & bulk remove manga"
+            >
+              <span className="text-sm">⚙️</span>
+              <span>{manageMode ? "Exit Manage" : "Manage"}</span>
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Manage Mode Floating Sticky Actions Bar */}
+      {manageMode && isOwner && (
+        <div className="sticky top-16 z-20 rounded-2xl border border-accent/40 bg-surface/95 backdrop-blur-md p-4 shadow-xl flex flex-wrap items-center justify-between gap-3 animate-fadeIn">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleSelectAll}
+              className="px-3.5 py-2 rounded-xl border border-border text-xs font-bold text-foreground hover:bg-surfaceHover transition-colors cursor-pointer"
+            >
+              {selectedIds.size === processedEntries.length && processedEntries.length > 0
+                ? "Deselect All"
+                : "Select All"}
+            </button>
+            <span className="text-xs font-extrabold text-accent">
+              {selectedIds.size} of {processedEntries.length} selected
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={selectedIds.size === 0 || deleteBusy}
+              onClick={() => setDeleteConfirmOpen(true)}
+              className="px-4 py-2 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-bold transition-all shadow-sm disabled:opacity-40 inline-flex items-center gap-1.5 cursor-pointer"
+            >
+              <span>🗑️</span>
+              <span>Remove Selected ({selectedIds.size})</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Empty State */}
       {processedEntries.length === 0 ? (
@@ -274,12 +371,22 @@ export default function MangaListTracker({
             <table className="w-full text-left text-xs border-collapse min-w-[700px]">
               <thead>
                 <tr className="border-b border-border text-muted uppercase tracking-wider font-semibold bg-surfaceHover/80 text-[11px]">
+                  {manageMode && (
+                    <th className="py-3 px-3 w-10 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.size === processedEntries.length && processedEntries.length > 0}
+                        onChange={handleSelectAll}
+                        className="w-4 h-4 rounded text-accent cursor-pointer accent-accent"
+                      />
+                    </th>
+                  )}
                   <th className="py-3 px-4 w-12 text-center">#</th>
                   <th className="py-3 px-4">Title</th>
                   <th className="py-3 px-4 w-28 text-center">Score</th>
                   <th className="py-3 px-4 w-36 text-center">Progress</th>
                   <th className="py-3 px-4 w-28 text-center">Type</th>
-                  {isOwner && <th className="py-3 px-4 w-24 text-center">Action</th>}
+                  {isOwner && !manageMode && <th className="py-3 px-4 w-24 text-center">Action</th>}
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -289,14 +396,39 @@ export default function MangaListTracker({
                   const isInc = incrementingId === entry.gold_id;
                   const totalCh = m.chapters;
                   const progPercent = totalCh && totalCh > 0 ? Math.min(100, Math.round((entry.progress / totalCh) * 100)) : null;
+                  const isSelected = selectedIds.has(entry.gold_id);
 
                   return (
-                    <tr key={entry.gold_id} className="hover:bg-surfaceHover/60 transition">
+                    <tr
+                      key={entry.gold_id}
+                      onClick={() => {
+                        if (manageMode) handleToggleSelect(entry.gold_id);
+                      }}
+                      className={`hover:bg-surfaceHover/60 transition ${
+                        manageMode ? "cursor-pointer" : ""
+                      } ${isSelected ? "bg-accentSoft/30" : ""}`}
+                    >
+                      {manageMode && (
+                        <td className="py-3.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={() => handleToggleSelect(entry.gold_id)}
+                            className="w-4 h-4 rounded text-accent cursor-pointer accent-accent"
+                          />
+                        </td>
+                      )}
                       <td className="py-3.5 px-4 text-center text-muted font-bold">{idx + 1}</td>
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3.5">
                           <Link
                             to={`/manga/${encodeURIComponent(entry.gold_id)}`}
+                            onClick={(e) => {
+                              if (manageMode) {
+                                e.preventDefault();
+                                handleToggleSelect(entry.gold_id);
+                              }
+                            }}
                             className="w-12 h-16 sm:w-14 sm:h-20 rounded-xl overflow-hidden shrink-0 border border-border/60 bg-surfaceHover block shadow-xs group"
                           >
                             {m.cover_image_url ? (
@@ -310,6 +442,12 @@ export default function MangaListTracker({
                           <div className="min-w-0 flex-1">
                             <Link
                               to={`/manga/${encodeURIComponent(entry.gold_id)}`}
+                              onClick={(e) => {
+                                if (manageMode) {
+                                  e.preventDefault();
+                                  handleToggleSelect(entry.gold_id);
+                                }
+                              }}
                               className="font-bold text-foreground hover:text-accent transition line-clamp-1 block text-sm sm:text-base"
                             >
                               {m.title || entry.gold_id}
@@ -349,7 +487,7 @@ export default function MangaListTracker({
                       <td className="py-3.5 px-4 text-center uppercase tracking-wider text-[11px] text-muted font-semibold">
                         {m.type || "Manga"}
                       </td>
-                      {isOwner && (
+                      {isOwner && !manageMode && (
                         <td className="py-3.5 px-4 text-center">
                           <button
                             type="button"
@@ -378,14 +516,41 @@ export default function MangaListTracker({
             const isInc = incrementingId === entry.gold_id;
             const totalCh = m.chapters;
             const progPercent = totalCh && totalCh > 0 ? Math.min(100, Math.round((entry.progress / totalCh) * 100)) : null;
+            const isSelected = selectedIds.has(entry.gold_id);
 
             return (
               <div
                 key={entry.gold_id}
-                className="rounded-2xl border border-border bg-surface p-4 sm:p-5 flex gap-4 items-center shadow-themeCard hover:border-accent/40 transition group"
+                onClick={() => {
+                  if (manageMode) handleToggleSelect(entry.gold_id);
+                }}
+                className={`rounded-2xl border bg-surface p-4 sm:p-5 flex gap-4 items-center shadow-themeCard transition group ${
+                  manageMode ? "cursor-pointer" : ""
+                } ${
+                  isSelected
+                    ? "border-accent ring-2 ring-accent/40 shadow-lg"
+                    : "border-border hover:border-accent/40"
+                }`}
               >
+                {manageMode && (
+                  <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleSelect(entry.gold_id)}
+                      className="w-5 h-5 rounded-lg border-2 border-border text-accent focus:ring-accent accent-accent cursor-pointer"
+                    />
+                  </div>
+                )}
+
                 <Link
                   to={`/manga/${encodeURIComponent(entry.gold_id)}`}
+                  onClick={(e) => {
+                    if (manageMode) {
+                      e.preventDefault();
+                      handleToggleSelect(entry.gold_id);
+                    }
+                  }}
                   className="w-20 h-28 sm:w-24 sm:h-34 rounded-xl overflow-hidden shrink-0 border border-border/60 bg-surfaceHover relative block shadow-sm"
                 >
                   {m.cover_image_url ? (
@@ -404,6 +569,12 @@ export default function MangaListTracker({
                   <div>
                     <Link
                       to={`/manga/${encodeURIComponent(entry.gold_id)}`}
+                      onClick={(e) => {
+                        if (manageMode) {
+                          e.preventDefault();
+                          handleToggleSelect(entry.gold_id);
+                        }
+                      }}
                       className="font-bold text-sm sm:text-base text-foreground hover:text-accent transition line-clamp-1 block"
                     >
                       {m.title || entry.gold_id}
@@ -436,7 +607,7 @@ export default function MangaListTracker({
                     )}
                   </div>
 
-                  {isOwner && (
+                  {isOwner && !manageMode && (
                     <div className="flex justify-end pt-1">
                       <button
                         type="button"
@@ -459,45 +630,124 @@ export default function MangaListTracker({
           {processedEntries.map((entry) => {
             const m = entry.manga || {};
             const formattedScore = formatScoreBySystem(entry.score, scoreSystem);
+            const isSelected = selectedIds.has(entry.gold_id);
 
             return (
-              <Link
+              <div
                 key={entry.gold_id}
-                to={`/manga/${encodeURIComponent(entry.gold_id)}`}
-                className="group relative rounded-2xl overflow-hidden border border-border bg-surface aspect-[2/3] block shadow-themeCard hover:border-accent hover:shadow-xl transition"
+                onClick={() => {
+                  if (manageMode) {
+                    handleToggleSelect(entry.gold_id);
+                  }
+                }}
+                className={`group relative rounded-2xl overflow-hidden border bg-surface aspect-[2/3] block shadow-themeCard transition duration-200 ${
+                  manageMode ? "cursor-pointer" : ""
+                } ${
+                  isSelected
+                    ? "border-accent ring-2 ring-accent/50 shadow-lg scale-[0.98]"
+                    : "border-border hover:border-accent hover:shadow-xl"
+                }`}
               >
-                {m.cover_image_url ? (
-                  <img
-                    src={m.cover_image_url}
-                    alt={m.title}
-                    className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-                  />
-                ) : (
-                  <div className="w-full h-full bg-surfaceHover flex items-center justify-center p-2 text-xs text-muted text-center font-semibold">
-                    {m.title}
+                {/* Checkbox overlay in manage mode */}
+                {manageMode && (
+                  <div
+                    className="absolute top-2.5 left-2.5 z-20"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => handleToggleSelect(entry.gold_id)}
+                      className="w-5 h-5 rounded-lg border-2 border-border text-accent focus:ring-accent accent-accent cursor-pointer bg-black/80"
+                    />
                   </div>
                 )}
-                {/* Score badge at top */}
-                <div className="absolute top-2 right-2">
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black/75 text-white backdrop-blur-xs shadow">
-                    ★ {formattedScore}
-                  </span>
-                </div>
-                {/* Always-visible bottom gradient with title and progress */}
-                <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-6 flex flex-col justify-end text-white">
-                  <div className="text-xs font-bold line-clamp-1 group-hover:text-accent transition">
-                    {m.title || entry.gold_id}
-                  </div>
-                  <div className="flex items-center justify-between mt-0.5 text-[10px] text-white/80">
-                    <span>Ch. {entry.progress || 0}</span>
-                    <span className="uppercase text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-semibold">
-                      {entry.status}
+
+                <Link
+                  to={`/manga/${encodeURIComponent(entry.gold_id)}`}
+                  onClick={(e) => {
+                    if (manageMode) {
+                      e.preventDefault();
+                      handleToggleSelect(entry.gold_id);
+                    }
+                  }}
+                  className="w-full h-full block relative"
+                >
+                  {m.cover_image_url ? (
+                    <img
+                      src={m.cover_image_url}
+                      alt={m.title}
+                      className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-surfaceHover flex items-center justify-center p-2 text-xs text-muted text-center font-semibold">
+                      {m.title}
+                    </div>
+                  )}
+                  {/* Score badge at top */}
+                  <div className="absolute top-2 right-2 z-10">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-black/75 text-white backdrop-blur-xs shadow">
+                      ★ {formattedScore}
                     </span>
                   </div>
-                </div>
-              </Link>
+                  {/* Always-visible bottom gradient with title and progress */}
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3 pt-6 flex flex-col justify-end text-white">
+                    <div className="text-xs font-bold line-clamp-1 group-hover:text-accent transition">
+                      {m.title || entry.gold_id}
+                    </div>
+                    <div className="flex items-center justify-between mt-0.5 text-[10px] text-white/80">
+                      <span>Ch. {entry.progress || 0}</span>
+                      <span className="uppercase text-[9px] px-1.5 py-0.2 rounded bg-white/20 font-semibold">
+                        {entry.status}
+                      </span>
+                    </div>
+                  </div>
+                </Link>
+              </div>
             );
           })}
+        </div>
+      )}
+
+      {/* BULK REMOVE CONFIRMATION MODAL */}
+      {deleteConfirmOpen && (
+        <div
+          onClick={() => !deleteBusy && setDeleteConfirmOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl border border-red-500/30 bg-surface p-6 shadow-2xl space-y-4 text-center"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 text-2xl flex items-center justify-center mx-auto">
+              🗑️
+            </div>
+            <h3 className="text-lg font-black text-foreground">
+              Remove {selectedIds.size} {selectedIds.size === 1 ? "Title" : "Titles"}?
+            </h3>
+            <p className="text-xs text-muted leading-relaxed">
+              Are you sure you want to remove {selectedIds.size} {selectedIds.size === 1 ? "manga" : "mangas"} from your list?
+              This will remove your reading tracking and scores for these titles.
+            </p>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={() => setDeleteConfirmOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-border text-xs font-bold text-muted hover:text-foreground cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleteBusy}
+                onClick={handleBulkDelete}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+              >
+                {deleteBusy ? "Removing…" : "Yes, Remove"}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

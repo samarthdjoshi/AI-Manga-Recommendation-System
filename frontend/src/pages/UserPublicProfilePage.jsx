@@ -8,6 +8,7 @@ import {
   getUserFollowing,
   toggleFollowUser,
   getManga,
+  getMangaBatch,
   incrementChapter,
 } from "../api/client";
 import { useAuth } from "../context/useAuth";
@@ -83,14 +84,8 @@ export default function UserPublicProfilePage() {
           ]),
         ];
 
-        const resolvedManga = await Promise.all(
-          uniqueGoldIds.map((id) => getManga(id).catch(() => null))
-        );
+        const mangaMap = await getMangaBatch(uniqueGoldIds);
         if (cancelled) return;
-
-        const mangaMap = Object.fromEntries(
-          resolvedManga.filter(Boolean).map((m) => [m.gold_id, m])
-        );
 
         setTrackingEntries(
           trackData.entries.map((e) => ({
@@ -505,6 +500,9 @@ export default function UserPublicProfilePage() {
             isOwner={isOwnProfile}
             onIncrement={handleQuickIncrement}
             incrementingId={incrementingId}
+            onRemoveTitles={(deletedIds) => {
+              setTrackingEntries((prev) => prev.filter((e) => !deletedIds.includes(e.gold_id)));
+            }}
           />
         )}
 
