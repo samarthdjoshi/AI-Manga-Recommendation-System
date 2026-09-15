@@ -9,6 +9,7 @@ Then visit http://127.0.0.1:8000/docs for interactive API docs.
 
 from __future__ import annotations
 
+import concurrent.futures
 import re
 import threading
 import uuid
@@ -644,7 +645,37 @@ def _build_fallback_catalog_records(
         except Exception as exc:  # noqa: BLE001
             print(f"[chat] Fallback semantic search error: {exc}")
 
-    # 2. Keyword/title text search if more results needed
+    # 2. Titles mentioned in query (e.g. "something like Solo Leveling") -> recommend similar titles
+    if len(results) < limit and hasattr(svc, "find_titles_mentioned_in_text"):
+        try:
+            mentioned = svc.find_titles_mentioned_in_text(query, limit=2)
+            for m in mentioned:
+                gid = m.get("gold_id")
+                if gid and hasattr(svc, "recommend"):
+                    try:
+                        similars = svc.recommend(gid, top_k=limit)
+                        for rec in similars:
+                            sgid = rec.get("gold_id")
+                            if sgid and sgid not in seen_ids and _passes_content_filters(rec, hide_explicit, hide_doujinshi):
+                                seen_ids.add(sgid)
+                                r_copy = dict(rec)
+                                r_copy["reason"] = f"Similar to {m.get('title', 'title')}"
+                                results.append(r_copy)
+                            if len(results) >= limit:
+                                break
+                    except Exception as exc:  # noqa: BLE001
+                        print(f"[chat] Fallback recommend error: {exc}")
+                if gid and gid not in seen_ids and _passes_content_filters(m, hide_explicit, hide_doujinshi):
+                    seen_ids.add(gid)
+                    r_copy = dict(m)
+                    r_copy["reason"] = "Mentioned in search"
+                    results.append(r_copy)
+                if len(results) >= limit:
+                    break
+        except Exception as exc:  # noqa: BLE001
+            print(f"[chat] Fallback find_titles error: {exc}")
+
+    # 3. Keyword/title text search if more results needed
     if len(results) < limit:
         try:
             text_matches = svc.search(query, limit=limit * 2)
@@ -659,6 +690,26 @@ def _build_fallback_catalog_records(
                     break
         except Exception as exc:  # noqa: BLE001
             print(f"[chat] Fallback text search error: {exc}")
+
+    # 4. Token/word search if still under limit
+    if len(results) < limit:
+        stop_words = {"something", "like", "manga", "recommend", "recommendation", "similar", "about", "show", "give", "best", "want", "find"}
+        words = [w for w in re.split(r"[^\w]+", query) if len(w) > 2 and w.lower() not in stop_words]
+        for word in words:
+            try:
+                for rec in svc.search(word, limit=limit):
+                    gid = rec.get("gold_id")
+                    if gid and gid not in seen_ids and _passes_content_filters(rec, hide_explicit, hide_doujinshi):
+                        seen_ids.add(gid)
+                        r_copy = dict(rec)
+                        r_copy["reason"] = f"Matches '{word}'"
+                        results.append(r_copy)
+                    if len(results) >= limit:
+                        break
+            except Exception:
+                pass
+            if len(results) >= limit:
+                break
 
     return results
 
@@ -682,18 +733,21 @@ def chat(
     suggestions: list[str] = []
 
     try:
-        agent_res = run_agent_chat(
-            message=payload.message,
-            history=[m.model_dump() for m in payload.history],
-            svc=svc,
-            retriever=retriever,
-            hide_explicit=payload.hide_explicit,
-            hide_doujinshi=payload.hide_doujinshi,
-            page_context_gold_id=payload.page_context_gold_id,
-            current_user_id=current_user_id,
-            db=db,
-            force_provider=None,
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                run_agent_chat,
+                message=payload.message,
+                history=[m.model_dump() for m in payload.history],
+                svc=svc,
+                retriever=retriever,
+                hide_explicit=payload.hide_explicit,
+                hide_doujinshi=payload.hide_doujinshi,
+                page_context_gold_id=payload.page_context_gold_id,
+                current_user_id=current_user_id,
+                db=db,
+                force_provider=None,
+            )
+            agent_res = future.result(timeout=14.0)
         reply_text, source_records = agent_res
         provider = getattr(agent_res, "provider", "gemini")
     except Exception as exc:  # noqa: BLE001

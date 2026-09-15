@@ -46,16 +46,14 @@ from ml.recommender.service import (
 if TYPE_CHECKING:
     from ml.recommender.chat_retrieval import ChatRetriever
 
-# Tried in order. gemini-3.5-flash-lite has a much higher free-tier daily
-# quota than gemini-3.6-flash, so it goes first - trying an
-# already-exhausted model first would waste a full network round trip on
-# every single request before ever reaching a model with quota left.
-MODEL_CHAIN = ["gemini-3.5-flash-lite", "gemini-3.6-flash"]
+# Tried in order. gemini-3.5-flash-lite and gemini-flash-lite-latest offer
+# fast response times (<2s) and high availability for discovery tools.
+MODEL_CHAIN = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]
 
-GEMINI_TIMEOUT_MS = 20000  # 20 seconds server-side timeout
+GEMINI_TIMEOUT_MS = 10000  # 10 seconds server-side timeout
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "qwen2.5:7b-instruct"
-OLLAMA_TIMEOUT_SECONDS = 25
+OLLAMA_TIMEOUT_SECONDS = 10
 
 
 class AgentChatResult(tuple):
@@ -152,7 +150,7 @@ def _tool_wrapper(fn):
 
 def _ollama_is_reachable() -> bool:
     try:
-        resp = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=2)
+        resp = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=0.8)
         return resp.status_code == 200
     except requests.RequestException:
         return False
@@ -239,16 +237,24 @@ def _build_tools(
             top_k: Max results, up to 15.
         """
         top_k = max(1, min(top_k, 15))
-        hits = retriever.semantic_search(description, top_k=top_k * 3)
-        results = []
-        for gold_id, _score in hits:
-            record = svc.records_by_gold_id.get(gold_id)
-            if record and _passes_filters(record, hide_explicit, hide_doujinshi):
-                results.append(record)
-            if len(results) >= top_k:
-                break
-        _record_sources(results)
-        return [_simplify(r) for r in results]
+        if retriever and hasattr(retriever, "semantic_search"):
+            try:
+                hits = retriever.semantic_search(description, top_k=top_k * 3)
+                results = []
+                for gold_id, _score in hits:
+                    record = svc.records_by_gold_id.get(gold_id)
+                    if record and _passes_filters(record, hide_explicit, hide_doujinshi):
+                        results.append(record)
+                    if len(results) >= top_k:
+                        break
+                if results:
+                    _record_sources(results)
+                    return [_simplify(r) for r in results]
+            except Exception as exc:
+                print(f"[agent] semantic_search error: {exc}")
+
+        # Fallback to catalog search by query if retriever is unavailable or returned 0 hits
+        return search_manga(query=description, limit=top_k)
 
     def get_manga_details(title: str) -> dict | None:
         """Get full details for a specific manga by its title (or close to it).
@@ -283,8 +289,9 @@ def _build_tools(
         gold_id = matches[0]["gold_id"]
         try:
             results = svc.recommend(gold_id, top_k=top_k * 2)
-        except MangaNotFoundError:
-            return []
+        except Exception:
+            # Fallback to search if similarity index is unavailable for this title
+            results = svc.search(title, limit=top_k)
         results = [r for r in results if _passes_filters(r, hide_explicit, hide_doujinshi)][:top_k]
         _record_sources(results)
         return [_simplify(r) for r in results]
