@@ -27,6 +27,8 @@ from api.routes_discovery import (
     router as discovery_router,
 )
 from api.schemas import (
+    BatchMangaRequest,
+    BatchMangaResponse,
     BrowseResponse,
     ChatRequest,
     ChatResponse,
@@ -371,6 +373,17 @@ def get_manga(gold_id: str) -> MangaDetail:
                 pass
 
     raise HTTPException(status_code=404, detail=f"No manga found with gold_id={gold_id!r}")
+
+
+@app.post("/manga/batch", response_model=BatchMangaResponse)
+def get_manga_batch(payload: BatchMangaRequest) -> BatchMangaResponse:
+    svc = get_service()
+    results = {}
+    for gid in payload.gold_ids:
+        if gid in svc.records_by_gold_id:
+            record = dict(svc.records_by_gold_id[gid])
+            results[gid] = _enrich_manga_links(record)
+    return BatchMangaResponse(results=results)
 
 
 

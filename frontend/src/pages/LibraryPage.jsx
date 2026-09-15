@@ -9,6 +9,7 @@ import {
   downloadLibraryExport,
   getCustomList,
   getManga,
+  getMangaBatch,
   incrementChapter,
   listAllTags,
   listCustomLists,
@@ -46,15 +47,64 @@ export default function LibraryPage() {
   // Active view tab: "all", status id, "favorites", "list:{id}", "tag:{tag}"
   const activeTab = searchParams.get("tab") || "all";
 
-  // Data state
-  const [loading, setLoading] = useState(false);
+  // Instant Data state (hydrated from localStorage for 0ms render)
+  const [loading, setLoading] = useState(() => {
+    try {
+      const c = localStorage.getItem("mangaverse_library_cache");
+      return !c;
+    } catch {
+      return true;
+    }
+  });
   const [error, setError] = useState("");
-  const [trackingEntries, setTrackingEntries] = useState([]);
-  const [favoriteIds, setFavoriteIds] = useState(new Set());
-  const [customLists, setCustomLists] = useState([]);
-  const [customListEntries, setCustomListEntries] = useState({});
-  const [tagsByGoldId, setTagsByGoldId] = useState({});
-  const [mangaMap, setMangaMap] = useState({});
+  const [trackingEntries, setTrackingEntries] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
+      return c.trackingEntries || [];
+    } catch {
+      return [];
+    }
+  });
+  const [favoriteIds, setFavoriteIds] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
+      return new Set(c.favoriteIds || []);
+    } catch {
+      return new Set();
+    }
+  });
+  const [customLists, setCustomLists] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
+      return c.customLists || [];
+    } catch {
+      return [];
+    }
+  });
+  const [customListEntries, setCustomListEntries] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
+      return c.customListEntries || {};
+    } catch {
+      return {};
+    }
+  });
+  const [tagsByGoldId, setTagsByGoldId] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
+      return c.tagsByGoldId || {};
+    } catch {
+      return {};
+    }
+  });
+  const [mangaMap, setMangaMap] = useState(() => {
+    try {
+      const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
+      return c.mangaMap || {};
+    } catch {
+      return {};
+    }
+  });
   const [reloadTrigger, setReloadTrigger] = useState(0);
 
   // Search & Sort state within library
@@ -160,9 +210,11 @@ export default function LibraryPage() {
     if (authLoading || !token) return undefined;
     let cancelled = false;
 
-    Promise.resolve().then(() => {
-      if (!cancelled) setLoading(true);
-    });
+    // Only show full-screen spinner if we have zero cached items
+    const hasCachedData = trackingEntries.length > 0 || Object.keys(mangaMap).length > 0;
+    if (!hasCachedData) {
+      setLoading(true);
+    }
 
     Promise.all([
       listTracking(token),
@@ -194,25 +246,35 @@ export default function LibraryPage() {
           ...Object.keys(tags),
         ]);
 
-        const titles = await Promise.all(
-          [...allGoldIds].map((id) => getManga(id).catch(() => null))
-        );
+        // Fetch all manga details in a SINGLE fast batch request!
+        const byId = await getMangaBatch([...allGoldIds]);
         if (cancelled) return;
-
-        const byId = {};
-        titles.filter(Boolean).forEach((m) => {
-          byId[m.gold_id] = m;
-        });
 
         setTrackingEntries(trackingList);
         setFavoriteIds(favSet);
         setCustomLists(lists);
         setCustomListEntries(listEntriesMap);
         setTagsByGoldId(tags);
-        setMangaMap(byId);
+        setMangaMap((prev) => ({ ...prev, ...byId }));
+
+        try {
+          localStorage.setItem(
+            "mangaverse_library_cache",
+            JSON.stringify({
+              trackingEntries: trackingList,
+              favoriteIds: [...favSet],
+              customLists: lists,
+              customListEntries: listEntriesMap,
+              tagsByGoldId: tags,
+              mangaMap: { ...mangaMap, ...byId },
+            })
+          );
+        } catch {
+          // ignore quota
+        }
       })
       .catch(() => {
-        if (!cancelled) setError("Failed to load your library. Please try again.");
+        if (!cancelled && !hasCachedData) setError("Failed to load your library. Please try again.");
       })
       .finally(() => {
         if (!cancelled) setLoading(false);

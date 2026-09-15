@@ -161,3 +161,14 @@ def test_browse_offset_beyond_total_returns_empty_page():
         body = response.json()
         assert body["count"] == 0
         assert body["results"] == []
+
+
+def test_manga_batch():
+    with TestClient(app) as client:
+        response = client.post("/manga/batch", json={"gold_ids": [KNOWN_GOLD_ID, "nonexistent:999999"]})
+        assert response.status_code == 200
+        body = response.json()
+        assert "results" in body
+        assert KNOWN_GOLD_ID in body["results"]
+        assert body["results"][KNOWN_GOLD_ID]["gold_id"] == KNOWN_GOLD_ID
+        assert "nonexistent:999999" not in body["results"]

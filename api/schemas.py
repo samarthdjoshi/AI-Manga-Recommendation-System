@@ -130,3 +130,11 @@ class ChatResponse(BaseModel):
     status: str = Field(default="ok", pattern="^(ok|assistant_unavailable)$")
     provider: str | None = None
     suggestions: list[str] = Field(default_factory=list)
+
+
+class BatchMangaRequest(BaseModel):
+    gold_ids: list[str] = Field(default_factory=list, max_length=500)
+
+
+class BatchMangaResponse(BaseModel):
+    results: dict[str, MangaDetail]

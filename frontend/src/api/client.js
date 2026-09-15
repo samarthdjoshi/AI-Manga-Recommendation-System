@@ -74,6 +74,37 @@ export async function getManga(goldId) {
   return cachedGet(`/manga/${encodeURIComponent(goldId)}`, {}, 600000);
 }
 
+export async function getMangaBatch(goldIds) {
+  if (!goldIds || goldIds.length === 0) return {};
+  const needed = [];
+  const results = {};
+
+  for (const id of goldIds) {
+    const cacheKey = `/manga/${encodeURIComponent(id)}?#`;
+    const cached = apiCache.get(cacheKey);
+    if (cached && Date.now() - cached.timestamp < 600000) {
+      results[id] = cached.data;
+    } else {
+      needed.push(id);
+    }
+  }
+
+  if (needed.length === 0) return results;
+
+  try {
+    const response = await client.post("/manga/batch", { gold_ids: needed });
+    const batchResults = response.data?.results || {};
+    for (const [id, data] of Object.entries(batchResults)) {
+      results[id] = data;
+      apiCache.set(`/manga/${encodeURIComponent(id)}?#`, { data, timestamp: Date.now() });
+    }
+  } catch (err) {
+    console.error("Batch manga fetch error:", err);
+  }
+
+  return results;
+}
+
 export async function getRecommendations(goldId, topK = 10) {
   return cachedGet(`/recommend/${encodeURIComponent(goldId)}`, { params: { top_k: topK } }, 600000);
 }
