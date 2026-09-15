@@ -58,6 +58,44 @@ query ($page: Int, $perPage: Int, $sort: [MediaSort], $countryOfOrigin: CountryC
 }
 """
 
+MEDIA_BY_ID_QUERY = """
+query ($id: Int) {
+  Media(id: $id, type: MANGA) {
+    id
+    title {
+      romaji
+      english
+      native
+    }
+    coverImage {
+      extraLarge
+      large
+      medium
+    }
+    bannerImage
+    averageScore
+    popularity
+    trending
+    status
+    format
+    countryOfOrigin
+    genres
+    description(asHtml: false)
+    siteUrl
+    staff(perPage: 6) {
+      edges {
+        role
+        node {
+          name {
+            full
+          }
+        }
+      }
+    }
+  }
+}
+"""
+
 
 def _strip_html(text: str | None) -> str | None:
     if not text:
@@ -177,3 +215,28 @@ class AniListDiscoveryProvider(BaseDiscoveryProvider):
             "sort": ["POPULARITY_DESC"],
         })
         return [_normalize_anilist_media(m, default_rank=idx + 1 + (page - 1) * limit) for idx, m in enumerate(raw_items)]
+
+    def get_manga_by_id(self, media_id: int) -> MangaDiscoveryItem | None:
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "AI-Manga-Recommendation-System/0.1.0",
+        }
+        payload = {
+            "query": MEDIA_BY_ID_QUERY,
+            "variables": {"id": media_id},
+        }
+        try:
+            with httpx.Client(timeout=self.timeout) as client:
+                response = client.post(ANILIST_API_URL, json=payload, headers=headers)
+                if response.status_code == 404:
+                    return None
+                response.raise_for_status()
+                data = response.json()
+                media = (data.get("data") or {}).get("Media")
+                if not media:
+                    return None
+                return _normalize_anilist_media(media)
+        except Exception as exc:
+            logger.warning(f"Failed to fetch AniList media id {media_id}: {exc}")
+            return None

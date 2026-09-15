@@ -133,7 +133,7 @@ def _safe_validate_catalog_id(gold_id: str, title: str | None = None, allow_crea
 def _require_catalog_id(gold_id: str) -> None:
     if _catalog_id_validator is None:
         raise HTTPException(status_code=503, detail="Catalog service is still starting up")
-    if not _safe_validate_catalog_id(gold_id, allow_create=False):
+    if not _safe_validate_catalog_id(gold_id, allow_create=True):
         raise HTTPException(status_code=404, detail="Manga not found")
 
 

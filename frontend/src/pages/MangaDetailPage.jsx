@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, useLocation, Link } from "react-router-dom";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
 import MangaGrid from "../components/MangaGrid";
@@ -27,12 +27,32 @@ function formatDescription(description) {
 export default function MangaDetailPage() {
   const { goldId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { token } = useAuth();
   const { setPageManga } = useChatPageContext();
 
-  const [manga, setManga] = useState(null);
+  const passedItem = location.state?.manga;
+  const initialManga = passedItem
+    ? {
+        gold_id: passedItem.gold_id || goldId,
+        title: passedItem.title,
+        cover_image_url: passedItem.cover_url,
+        description: passedItem.description,
+        genres: passedItem.genres || [],
+        rating_combined: passedItem.score,
+        status_raw: passedItem.status,
+        media_type: passedItem.type,
+        authors: passedItem.authors || [],
+        artists: passedItem.artists || [],
+        official_links: passedItem.source_url
+          ? { read: [], info: [{ url: passedItem.source_url, site: "Official" }] }
+          : null,
+      }
+    : null;
+
+  const [manga, setManga] = useState(initialManga);
   const [recommendations, setRecommendations] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialManga);
   const [error, setError] = useState(null);
   const [coverFailed, setCoverFailed] = useState(false);
   const [isFavorited, setIsFavorited] = useState(false);
@@ -42,7 +62,10 @@ export default function MangaDetailPage() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      getManga(goldId),
+      getManga(goldId).catch((err) => {
+        if (initialManga) return initialManga;
+        throw err;
+      }),
       getRecommendations(goldId, 10).catch(() => ({ results: [] })),
     ])
       .then(([mangaData, recData]) => {
@@ -50,13 +73,17 @@ export default function MangaDetailPage() {
         setManga(mangaData);
         setRecommendations(recData.results || []);
         setPageManga({ gold_id: mangaData.gold_id, title: mangaData.title });
+        setError(null);
       })
       .catch(() => {
-        if (!cancelled) setError("Couldn't load this title. It may not exist, or the API is unreachable.");
+        if (!cancelled && !initialManga) {
+          setError("Couldn't load this title. It may not exist, or the API is unreachable.");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
+
 
     return () => {
       cancelled = true;

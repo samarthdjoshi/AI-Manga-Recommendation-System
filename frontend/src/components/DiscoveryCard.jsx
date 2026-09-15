@@ -16,6 +16,7 @@ export default function DiscoveryCard({ item, rank }) {
   return (
     <Link
       to={targetLink}
+      state={{ manga: item }}
       className="group flex-shrink-0 w-[185px] sm:w-[215px] md:w-[230px] flex flex-col rounded-2xl bg-surface border border-border overflow-hidden hover:border-accent hover:shadow-themeCard transition-all duration-300 relative"
     >
       {/* Cover Artwork Container */}

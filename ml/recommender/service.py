@@ -484,6 +484,38 @@ class RecommenderService:
 
         return results
 
+    def recommend_by_genres_and_popularity(
+        self, genres: list[str] | None = None, top_k: int = DEFAULT_TOP_K, exclude_id: str | None = None
+    ) -> list[dict]:
+        top_k = max(1, min(top_k, MAX_TOP_K))
+        target_genres = set(g.strip().lower() for g in (genres or []))
+
+        candidates: list[tuple[float, dict]] = []
+        for r in self.records:
+            gid = r.get("gold_id")
+            if gid == exclude_id:
+                continue
+            r_genres = set(g.strip().lower() for g in r.get("genres", []))
+            shared = len(target_genres & r_genres) if target_genres else 0
+            rating = r.get("rating_combined") or 6.5
+            if target_genres and shared == 0:
+                continue
+            score = round(0.45 + 0.12 * shared + (rating / 10.0) * 0.25, 3)
+            candidates.append((score, r))
+
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        if len(candidates) < top_k:
+            for r in self.records:
+                gid = r.get("gold_id")
+                if gid == exclude_id or any(c[1].get("gold_id") == gid for c in candidates):
+                    continue
+                score = round(0.40 + ((r.get("rating_combined") or 6.5) / 10.0) * 0.20, 3)
+                candidates.append((score, r))
+                if len(candidates) >= top_k:
+                    break
+
+        return [{**r, "similarity_score": score} for score, r in candidates[:top_k]]
+
     def discover(self, sort: str = "rating", limit: int = 12) -> list[dict]:
         """
         Returns a curated list of records for homepage discovery rails.

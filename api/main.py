@@ -195,11 +195,60 @@ def search(
 @app.get("/manga/{gold_id}", response_model=MangaDetail)
 def get_manga(gold_id: str) -> MangaDetail:
     svc = get_service()
-    try:
-        record = svc.get_by_id(gold_id)
-    except MangaNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return record
+    # 1. Direct hit in catalog
+    if gold_id in svc.records_by_gold_id:
+        return svc.records_by_gold_id[gold_id]
+
+    # 2. External ID resolution (AniList, MAL, MangaUpdates)
+    if ":" in gold_id:
+        prefix, ext_id = gold_id.split(":", 1)
+        if hasattr(svc, "resolve_external_id_to_gold_id"):
+            resolved_gid = svc.resolve_external_id_to_gold_id(prefix, ext_id)
+            if resolved_gid and resolved_gid in svc.records_by_gold_id:
+                return svc.records_by_gold_id[resolved_gid]
+
+        # 3. Dynamic lookup for AniList external items (only valid numeric AniList IDs)
+        if prefix.lower() in ("anilist", "al") and ext_id.isdigit():
+            try:
+                from services.manga_discovery.providers.anilist import AniListDiscoveryProvider
+                provider = AniListDiscoveryProvider()
+                item = provider.get_manga_by_id(int(ext_id))
+                if item:
+                    record = {
+                        "gold_id": gold_id,
+                        "title": item.title,
+                        "original_title": item.alternative_titles[0] if item.alternative_titles else None,
+                        "year": None,
+                        "genres": item.genres or [],
+                        "sources": ["anilist"],
+                        "source_count": 1,
+                        "match_confidence": "external",
+                        "cover_image_url": item.cover_url,
+                        "rating_combined": item.score,
+                        "chapters": None,
+                        "description": item.description,
+                        "status_raw": item.status,
+                        "media_type": item.type,
+                        "format_raw": item.type,
+                        "demographic": item.demographic,
+                        "authors": item.authors or [],
+                        "artists": item.artists or [],
+                        "volumes": None,
+                        "official_links": {"read": [], "info": [{"url": item.source_url, "site": "AniList"}] if item.source_url else []},
+                        "rating_combined_sources": ["anilist"],
+                        "rating_anilist": item.score,
+                        "rating_mangaupdates": None,
+                    }
+                    svc.records_by_gold_id[gold_id] = record
+                    if hasattr(svc, "records"):
+                        svc.records.append(record)
+                    return record
+            except Exception:
+                pass
+
+    raise HTTPException(status_code=404, detail=f"No manga found with gold_id={gold_id!r}")
+
+
 
 
 @app.get("/recommend/for-me", response_model=RecommendationResponse)
@@ -282,17 +331,39 @@ def recommend(
     top_k: int = Query(10, ge=1, le=100, description="Number of recommendations to return"),
 ) -> RecommendationResponse:
     svc = get_service()
+    query_manga_dict = None
     try:
-        query_manga = svc.get_by_id(gold_id)
+        query_manga_dict = get_manga(gold_id)
+        if hasattr(query_manga_dict, "model_dump"):
+            query_manga_dict = query_manga_dict.model_dump()
+        elif hasattr(query_manga_dict, "dict"):
+            query_manga_dict = query_manga_dict.dict()
+    except HTTPException:
+        pass
+
+    if not query_manga_dict:
+        raise HTTPException(status_code=404, detail=f"No manga found with gold_id={gold_id!r}")
+
+    results = []
+    try:
         results = svc.recommend(gold_id, top_k=top_k)
-    except MangaNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception:
+        results = []
+
+    # If not in FAISS index or recommendations empty, use content-based genre & rating similarity
+    if not results:
+        genres = query_manga_dict.get("genres", [])
+        if hasattr(svc, "recommend_by_genres_and_popularity"):
+            results = svc.recommend_by_genres_and_popularity(genres=genres, top_k=top_k, exclude_id=gold_id)
+        elif hasattr(svc, "discover"):
+            results = svc.discover(sort="rating", limit=top_k)
 
     return RecommendationResponse(
-        query_manga=query_manga,
+        query_manga=query_manga_dict,
         count=len(results),
         results=[RecommendationResult(**r) for r in results],
     )
+
 
 
 @app.get("/discover", response_model=DiscoverResponse)
