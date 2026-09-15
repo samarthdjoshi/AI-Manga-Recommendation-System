@@ -620,5 +620,38 @@ def test_import_user_mal_export_xml_format(client: TestClient) -> None:
             assert entry["status"] == "reading"
 
 
+def test_bulk_delete_library(client: TestClient) -> None:
+    _, token = _create_user(client, "bulk_del_user", "bulk_del@example.com")
+    headers = _auth_header(token)
+
+    # 1. Add tracking entries
+    client.put("/auth/tracking/anilist:21", json={"status": "reading", "progress": 50}, headers=headers)
+    client.put("/auth/tracking/anilist:30002", json={"status": "completed", "progress": 100}, headers=headers)
+    client.post("/auth/favorites/anilist:21", headers=headers)
+
+    # Verify present
+    res = client.get("/auth/tracking", headers=headers).json()
+    assert res["count"] == 2
+
+    # 2. Bulk delete anilist:21
+    del_res = client.post(
+        "/auth/library/bulk-delete",
+        json={"gold_ids": ["anilist:21"]},
+        headers=headers,
+    )
+    assert del_res.status_code == 200
+    data = del_res.json()
+    assert data["deleted_count"] == 1
+    assert data["gold_ids"] == ["anilist:21"]
+
+    # Verify anilist:21 removed from tracking & favorites, but anilist:30002 remains
+    track_after = client.get("/auth/tracking", headers=headers).json()
+    assert track_after["count"] == 1
+    assert track_after["entries"][0]["gold_id"] == "anilist:30002"
+
+    fav_after = client.get("/auth/favorites", headers=headers).json()
+    assert fav_after["count"] == 0
+
+
 
 

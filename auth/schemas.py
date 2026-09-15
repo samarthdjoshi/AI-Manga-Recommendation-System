@@ -142,6 +142,18 @@ class BulkUpdateResponse(BaseModel):
     gold_ids: list[str]
 
 
+class BulkDeleteRequest(BaseModel):
+    gold_ids: list[str] = Field(min_length=1, max_length=500)
+    remove_from_lists: bool = True
+    remove_favorites: bool = True
+
+
+class BulkDeleteResponse(BaseModel):
+    deleted_count: int
+    gold_ids: list[str]
+    message: str
+
+
 # --- Import / Export Schemas ---
 
 

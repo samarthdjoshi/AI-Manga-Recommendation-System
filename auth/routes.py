@@ -42,6 +42,8 @@ from auth.schemas import (
     ActivityReplyCreateRequest,
     ActivityReplyResponse,
     ActivityResponse,
+    BulkDeleteRequest,
+    BulkDeleteResponse,
     BulkUpdateRequest,
     BulkUpdateResponse,
     ChangePasswordRequest,
@@ -751,6 +753,53 @@ def bulk_update_library(
         raise HTTPException(status_code=500, detail="Bulk update failed and was rolled back") from exc
 
     return BulkUpdateResponse(updated_count=len(payload.gold_ids), gold_ids=payload.gold_ids)
+
+
+@router.post("/library/bulk-delete", response_model=BulkDeleteResponse)
+def bulk_delete_library(
+    payload: BulkDeleteRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> BulkDeleteResponse:
+    if not payload.gold_ids:
+        raise HTTPException(status_code=400, detail="No gold_ids provided")
+
+    gids = list(set(payload.gold_ids))
+    try:
+        # Delete tracking entries
+        db.query(TrackingEntry).filter(
+            TrackingEntry.user_id == current_user.id,
+            TrackingEntry.gold_id.in_(gids),
+        ).delete(synchronize_session=False)
+
+        # Delete private tags
+        db.query(PrivateTag).filter(
+            PrivateTag.user_id == current_user.id,
+            PrivateTag.gold_id.in_(gids),
+        ).delete(synchronize_session=False)
+
+        if payload.remove_from_lists:
+            db.query(CustomListEntry).filter(
+                CustomListEntry.user_id == current_user.id,
+                CustomListEntry.gold_id.in_(gids),
+            ).delete(synchronize_session=False)
+
+        if payload.remove_favorites:
+            db.query(Favorite).filter(
+                Favorite.user_id == current_user.id,
+                Favorite.gold_id.in_(gids),
+            ).delete(synchronize_session=False)
+
+        db.commit()
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(status_code=500, detail="Bulk delete failed and was rolled back") from exc
+
+    return BulkDeleteResponse(
+        deleted_count=len(gids),
+        gold_ids=gids,
+        message=f"Successfully removed {len(gids)} titles from your library.",
+    )
 
 
 # --- Library Export Endpoints ---

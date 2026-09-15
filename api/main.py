@@ -21,7 +21,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from api.routes_discovery import configure_discovery_fallback, router as discovery_router
+from api.routes_discovery import (
+    configure_discovery_fallback,
+    discovery_service,
+    router as discovery_router,
+)
 from api.schemas import (
     BrowseResponse,
     ChatRequest,
@@ -95,6 +99,7 @@ async def lifespan(app: FastAPI):
         lambda gid: service.records_by_gold_id.get(gid, {}).get("title", "")
     )
     configure_discovery_fallback(service)
+    discovery_service.prewarm_feeds()
     yield
     print("Shutting down.")
 
@@ -522,6 +527,9 @@ def search_suggest(
     return SuggestResponse(query=q, results=[SuggestResult(**r) for r in results])
 
 
+_browse_cache: dict[tuple, tuple[float, BrowseResponse]] = {}
+
+
 @app.get("/browse", response_model=BrowseResponse)
 def browse(
     q: str | None = Query(None, description="Title search term to filter results"),
@@ -542,6 +550,17 @@ def browse(
     limit: int = Query(24, ge=1, le=100, description="Max results to return"),
     offset: int = Query(0, ge=0, description="Pagination offset"),
 ) -> BrowseResponse:
+    import time
+    cache_key = (
+        q, tuple(genre or ()), tuple(exclude_genre or ()), status, year_min, year_max,
+        min_chapters, max_chapters, min_rating, min_sources, has_official_links,
+        genre_match, hide_explicit, hide_doujinshi, sort, limit, offset
+    )
+    now = time.time()
+    cached = _browse_cache.get(cache_key)
+    if cached and (now - cached[0] < 600):
+        return cached[1]
+
     svc = get_service()
     results, total = svc.browse(
         q=q,
@@ -562,7 +581,11 @@ def browse(
         limit=limit,
         offset=offset,
     )
-    return BrowseResponse(count=len(results), total=total, results=results)
+    response = BrowseResponse(count=len(results), total=total, results=results)
+    if len(_browse_cache) > 500:
+        _browse_cache.clear()
+    _browse_cache[cache_key] = (now, response)
+    return response
 
 
 @app.get("/genres", response_model=GenreListResponse)

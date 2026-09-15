@@ -1,0 +1,23 @@
+name: Keep-Alive Heartbeat
+
+on:
+  schedule:
+    # Run every 10 minutes (cron runs in UTC)
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    name: Ping MangaVerse Backend
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send keep-alive ping
+        run: |
+          echo "Pinging MangaVerse Render backend..."
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" --max-time 45 "https://mangaverse-api-f61v.onrender.com/health")
+          echo "Response code: $STATUS"
+          if [ "$STATUS" -ge 200 ] && [ "$STATUS" -lt 400 ]; then
+            echo "Backend is alive and healthy!"
+          else
+            echo "Warning: Received HTTP status $STATUS"
+          fi

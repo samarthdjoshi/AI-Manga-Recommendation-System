@@ -13,6 +13,53 @@ const chatClient = axios.create({
   timeout: 90000,
 });
 
+// High-performance in-memory cache & request deduplication
+const apiCache = new Map();
+const inFlightRequests = new Map();
+
+export function clearApiCache(prefix = "") {
+  if (!prefix) {
+    apiCache.clear();
+    return;
+  }
+  for (const key of apiCache.keys()) {
+    if (key.startsWith(prefix)) {
+      apiCache.delete(key);
+    }
+  }
+}
+
+export async function cachedGet(url, config = {}, ttlMs = 300000) {
+  const paramsKey = config.params ? JSON.stringify(config.params) : "";
+  const authHeader = config.headers?.Authorization || "";
+  const cacheKey = `${url}?${paramsKey}#${authHeader}`;
+  const now = Date.now();
+
+  const cached = apiCache.get(cacheKey);
+  if (cached && now - cached.timestamp < ttlMs) {
+    return cached.data;
+  }
+
+  if (inFlightRequests.has(cacheKey)) {
+    return inFlightRequests.get(cacheKey);
+  }
+
+  const promise = client
+    .get(url, config)
+    .then((response) => {
+      apiCache.set(cacheKey, { data: response.data, timestamp: Date.now() });
+      inFlightRequests.delete(cacheKey);
+      return response.data;
+    })
+    .catch((error) => {
+      inFlightRequests.delete(cacheKey);
+      throw error;
+    });
+
+  inFlightRequests.set(cacheKey, promise);
+  return promise;
+}
+
 export async function checkHealth() {
   const response = await client.get("/health");
   return response.data;
@@ -20,29 +67,19 @@ export async function checkHealth() {
 
 export async function searchManga(query, limit = 12) {
   if (!query || !query.trim()) return { query: "", count: 0, results: [] };
-  const response = await client.get("/search", {
-    params: { q: query, limit },
-  });
-  return response.data;
+  return cachedGet("/search", { params: { q: query, limit } }, 120000);
 }
 
 export async function getManga(goldId) {
-  const response = await client.get(`/manga/${encodeURIComponent(goldId)}`);
-  return response.data;
+  return cachedGet(`/manga/${encodeURIComponent(goldId)}`, {}, 600000);
 }
 
 export async function getRecommendations(goldId, topK = 10) {
-  const response = await client.get(`/recommend/${encodeURIComponent(goldId)}`, {
-    params: { top_k: topK },
-  });
-  return response.data;
+  return cachedGet(`/recommend/${encodeURIComponent(goldId)}`, { params: { top_k: topK } }, 600000);
 }
 
 export async function getDiscover(sort = "rating", limit = 12) {
-  const response = await client.get("/discover", {
-    params: { sort, limit },
-  });
-  return response.data;
+  return cachedGet("/discover", { params: { sort, limit } }, 300000);
 }
 
 export async function getSuggestions(query, limit = 6, options = {}) {
@@ -92,13 +129,11 @@ export async function browseManga({
   params.append("limit", limit);
   params.append("offset", offset);
 
-  const response = await client.get("/browse", { params });
-  return response.data;
+  return cachedGet("/browse", { params }, 180000);
 }
 
 export async function getGenres() {
-  const response = await client.get("/genres");
-  return response.data;
+  return cachedGet("/genres", {}, 1800000);
 }
 
 // --- Auth ---
@@ -276,6 +311,17 @@ export async function bulkUpdateLibrary(payload, token) {
   const response = await client.post("/auth/library/bulk", payload, {
     headers: { Authorization: `Bearer ${token}` },
   });
+  clearApiCache();
+  return response.data;
+}
+
+export async function bulkDeleteLibrary(goldIds, token) {
+  const response = await client.post(
+    "/auth/library/bulk-delete",
+    { gold_ids: goldIds },
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  clearApiCache();
   return response.data;
 }
 
@@ -317,11 +363,7 @@ export async function commitImportLibrary({ previewToken, conflictStrategy }, to
 
 export async function getRecommendationsForMe(token, topK = 60) {
   const headers = token ? { Authorization: `Bearer ${token}` } : {};
-  const response = await client.get("/recommend/for-me", {
-    params: { top_k: topK },
-    headers,
-  });
-  return response.data;
+  return cachedGet("/recommend/for-me", { params: { top_k: topK }, headers }, 120000);
 }
 
 // --- Chat ---
@@ -355,31 +397,19 @@ export async function sendChatMessage(
 // --- Live Internet Discovery Feeds ---
 
 export async function getTrendingManga(limit = 20, page = 1) {
-  const response = await client.get("/discovery/trending", {
-    params: { limit, page },
-  });
-  return response.data;
+  return cachedGet("/discovery/trending", { params: { limit, page } }, 300000);
 }
 
 export async function getPopularManga(limit = 20, page = 1) {
-  const response = await client.get("/discovery/popular", {
-    params: { limit, page },
-  });
-  return response.data;
+  return cachedGet("/discovery/popular", { params: { limit, page } }, 300000);
 }
 
 export async function getTop100Manga(limit = 100, page = 1) {
-  const response = await client.get("/discovery/top-100", {
-    params: { limit, page },
-  });
-  return response.data;
+  return cachedGet("/discovery/top-100", { params: { limit, page } }, 600000);
 }
 
 export async function getPopularManhwa(limit = 20, page = 1) {
-  const response = await client.get("/discovery/manhwa", {
-    params: { limit, page },
-  });
-  return response.data;
+  return cachedGet("/discovery/manhwa", { params: { limit, page } }, 300000);
 }
 
 // --- AniList-Style Profile, Activity & Social APIs ---

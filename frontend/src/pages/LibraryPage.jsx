@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
+  bulkDeleteLibrary,
   bulkUpdateLibrary,
   commitImportLibrary,
   createCustomList,
@@ -69,6 +70,7 @@ export default function LibraryPage() {
   const [bulkAddTag, setBulkAddTag] = useState("");
   const [bulkAddListId, setBulkAddListId] = useState("");
   const [bulkModalOpen, setBulkModalOpen] = useState(false);
+  const [bulkDeleteConfirmOpen, setBulkDeleteConfirmOpen] = useState(false);
 
   // Custom list modals
   const [createListModalOpen, setCreateListModalOpen] = useState(false);
@@ -109,6 +111,7 @@ export default function LibraryPage() {
         setCreateListModalOpen(false);
         setEditListModalOpen(false);
         setDeleteListConfirmOpen(false);
+        setBulkDeleteConfirmOpen(false);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
@@ -353,6 +356,27 @@ export default function LibraryPage() {
       reloadLibrary();
     } catch {
       setError("Failed to execute bulk update. Please try again.");
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
+
+  // Bulk delete submission
+  const handleBulkDeleteSubmit = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkActionBusy(true);
+    setError("");
+    try {
+      const res = await bulkDeleteLibrary([...selectedIds], token);
+      setBulkDeleteConfirmOpen(false);
+      setBulkModalOpen(false);
+      const count = selectedIds.size;
+      setSelectedIds(new Set());
+      setManageMode(false);
+      setFeedbackMessage(res.message || `Successfully removed ${count} titles from library.`);
+      reloadLibrary();
+    } catch {
+      setError("Failed to remove titles from library. Please try again.");
     } finally {
       setBulkActionBusy(false);
     }
@@ -872,6 +896,15 @@ export default function LibraryPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={selectedIds.size === 0 || bulkActionBusy}
+              onClick={() => setBulkDeleteConfirmOpen(true)}
+              className="px-4 py-2 rounded-xl border border-red-500/40 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-bold transition-all shadow-sm disabled:opacity-40 inline-flex items-center gap-1.5"
+            >
+              <span>🗑️</span>
+              <span>Remove Selected ({selectedIds.size})</span>
+            </button>
             <button
               type="button"
               disabled={selectedIds.size === 0}
@@ -1445,21 +1478,34 @@ export default function LibraryPage() {
                 </div>
               )}
 
-              <div className="flex justify-end gap-3 pt-3 border-t border-border">
+              <div className="pt-3 border-t border-border flex flex-wrap items-center justify-between gap-2.5">
                 <button
                   type="button"
-                  onClick={() => setBulkModalOpen(false)}
-                  className="px-4 py-2 rounded-xl border border-border text-xs font-bold text-muted hover:text-foreground"
+                  onClick={() => {
+                    setBulkModalOpen(false);
+                    setBulkDeleteConfirmOpen(true);
+                  }}
+                  className="px-3.5 py-2 rounded-xl border border-red-500/30 bg-red-500/10 text-red-400 hover:bg-red-500/20 text-xs font-bold transition-all inline-flex items-center gap-1.5"
                 >
-                  Cancel
+                  <span>🗑️</span>
+                  <span>Remove from Library</span>
                 </button>
-                <button
-                  type="submit"
-                  disabled={bulkActionBusy}
-                  className="px-5 py-2 rounded-xl bg-accent text-xs font-black text-accentFg hover:bg-accentHover disabled:opacity-50 shadow-sm"
-                >
-                  {bulkActionBusy ? "Applying…" : "Apply to Selected"}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setBulkModalOpen(false)}
+                    className="px-4 py-2 rounded-xl border border-border text-xs font-bold text-muted hover:text-foreground"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={bulkActionBusy}
+                    className="px-5 py-2 rounded-xl bg-accent text-xs font-black text-accentFg hover:bg-accentHover disabled:opacity-50 shadow-sm"
+                  >
+                    {bulkActionBusy ? "Applying…" : "Apply to Selected"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -1608,6 +1654,47 @@ export default function LibraryPage() {
                 className="px-5 py-2 rounded-xl bg-red-600 text-xs font-black text-white hover:bg-red-700 disabled:opacity-50 shadow-sm"
               >
                 {listActionBusy ? "Deleting…" : "Yes, Delete List"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* BULK REMOVE CONFIRMATION MODAL */}
+      {bulkDeleteConfirmOpen && (
+        <div
+          onClick={() => setBulkDeleteConfirmOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-sm rounded-3xl border border-red-500/30 bg-surface p-6 shadow-2xl space-y-4 text-center"
+          >
+            <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 text-2xl flex items-center justify-center mx-auto">
+              🗑️
+            </div>
+            <h3 className="text-lg font-black text-foreground">
+              Remove {selectedIds.size} Titles?
+            </h3>
+            <p className="text-xs text-muted leading-relaxed">
+              Are you sure you want to remove {selectedIds.size} {selectedIds.size === 1 ? "manga" : "mangas"} from your library?
+              This will remove your reading tracking, scores, and private tags for these titles.
+            </p>
+            <div className="flex gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setBulkDeleteConfirmOpen(false)}
+                className="flex-1 py-2.5 rounded-xl border border-border text-xs font-bold text-muted hover:text-foreground"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkActionBusy}
+                onClick={handleBulkDeleteSubmit}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black transition-colors shadow-sm disabled:opacity-50"
+              >
+                {bulkActionBusy ? "Removing…" : "Yes, Remove"}
               </button>
             </div>
           </div>

@@ -43,6 +43,22 @@ class MangaDiscoveryService:
         """Configure local Gold fallback provider from running RecommenderService."""
         self.fallback = LocalFallbackProvider(local_recommender)
 
+    def prewarm_feeds(self) -> None:
+        """Pre-warm feeds in background so initial user requests return in 0ms."""
+        import threading
+        def _warm():
+            try:
+                self.get_trending(limit=15, page=1)
+                self.get_popular(limit=15, page=1)
+                self.get_popular_manhwa(limit=15, page=1)
+                self.get_trending(limit=20, page=1)
+                self.get_popular(limit=20, page=1)
+            except Exception as exc:
+                logger.warning(f"[discovery] Pre-warming feeds encountered: {exc}")
+
+        thread = threading.Thread(target=_warm, daemon=True, name="DiscoveryPrewarm")
+        thread.start()
+
     def _fetch_feed(
         self,
         feed_type: str,
