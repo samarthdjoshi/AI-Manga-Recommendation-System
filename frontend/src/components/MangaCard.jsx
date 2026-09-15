@@ -10,10 +10,59 @@ const STATUS_LABELS = {
   rereading: "Re-reading",
 };
 
+const THEMES = [
+  {
+    gradient: "from-indigo-950 via-slate-900 to-slate-950",
+    accent: "text-indigo-400",
+    border: "border-indigo-500/30",
+    pattern: "bg-[radial-gradient(#6366f1_1px,transparent_1px)]",
+  },
+  {
+    gradient: "from-rose-950 via-slate-900 to-slate-950",
+    accent: "text-rose-400",
+    border: "border-rose-500/30",
+    pattern: "bg-[radial-gradient(#f43f5e_1px,transparent_1px)]",
+  },
+  {
+    gradient: "from-emerald-950 via-slate-900 to-slate-950",
+    accent: "text-emerald-400",
+    border: "border-emerald-500/30",
+    pattern: "bg-[radial-gradient(#10b981_1px,transparent_1px)]",
+  },
+  {
+    gradient: "from-amber-950 via-slate-900 to-slate-950",
+    accent: "text-amber-400",
+    border: "border-amber-500/30",
+    pattern: "bg-[radial-gradient(#f59e0b_1px,transparent_1px)]",
+  },
+  {
+    gradient: "from-sky-950 via-slate-900 to-slate-950",
+    accent: "text-sky-400",
+    border: "border-sky-500/30",
+    pattern: "bg-[radial-gradient(#0ea5e9_1px,transparent_1px)]",
+  },
+  {
+    gradient: "from-purple-950 via-slate-900 to-slate-950",
+    accent: "text-purple-400",
+    border: "border-purple-500/30",
+    pattern: "bg-[radial-gradient(#a855f7_1px,transparent_1px)]",
+  },
+];
+
+function getTheme(str = "") {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = (hash << 5) - hash + str.charCodeAt(i);
+    hash |= 0;
+  }
+  return THEMES[Math.abs(hash) % THEMES.length];
+}
+
 export default function MangaCard({ manga, similarityScore, tracking, rank }) {
   const genres = (manga.genres || []).slice(0, 2);
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(false);
+  const theme = getTheme(manga.title || manga.gold_id || "");
 
   const hasTotalChapters = manga.chapters != null && manga.chapters > 0;
   const progress = tracking ? tracking.progress ?? 0 : null;
@@ -28,7 +77,7 @@ export default function MangaCard({ manga, similarityScore, tracking, rank }) {
       className="group flex flex-col rounded-2xl bg-surface border border-border hover:border-accent hover:shadow-themeCard transition-all duration-300 relative overflow-hidden h-full"
     >
       {/* Cover Image Container */}
-      <div className="aspect-[2/3] w-full bg-ink overflow-hidden relative shrink-0">
+      <div className="aspect-[2/3] w-full bg-slate-950 overflow-hidden relative shrink-0">
         {manga.cover_image_url && !failed ? (
           <img
             src={manga.cover_image_url}
@@ -43,18 +92,45 @@ export default function MangaCard({ manga, similarityScore, tracking, rank }) {
           />
         ) : null}
 
-        {(!loaded || failed) && (
+        {/* Loading skeleton placeholder */}
+        {!loaded && !failed && manga.cover_image_url && (
+          <div className="absolute inset-0 bg-surfaceHover animate-pulse flex items-center justify-center">
+            <span className="text-2xl opacity-30">📚</span>
+          </div>
+        )}
+
+        {/* Fallback Editorial Manga Cover when image is missing or failed */}
+        {(failed || !manga.cover_image_url) && (
           <div
-            className={`absolute inset-0 flex items-center justify-center ${
-              failed ? "text-muted" : "bg-surfaceHover animate-pulse"
-            }`}
+            className={`absolute inset-0 bg-gradient-to-br ${theme.gradient} flex flex-col justify-between p-3 sm:p-4 text-white select-none overflow-hidden`}
           >
-            {failed ? (
-              <div className="flex flex-col items-center gap-1.5 text-muted p-4 text-center">
-                <span className="text-3xl">📖</span>
-                <span className="text-xs font-semibold line-clamp-2">{manga.title}</span>
-              </div>
-            ) : null}
+            {/* Background subtle geometric pattern */}
+            <div className={`absolute inset-0 ${theme.pattern} [background-size:12px_12px] opacity-20 pointer-events-none`} />
+
+            {/* Top decorative header */}
+            <div className="relative z-10 flex items-center justify-between border-b border-white/15 pb-1.5">
+              <span className="text-[9px] sm:text-[10px] uppercase tracking-widest font-black text-white/70">
+                {manga.type || "Manga"}
+              </span>
+              <span className={`text-[10px] font-bold ${theme.accent}`}>
+                {manga.year || "Vol. 1"}
+              </span>
+            </div>
+
+            {/* Center title typography */}
+            <div className="relative z-10 my-auto py-2 text-center px-1">
+              <div className="w-5 h-0.5 mx-auto bg-white/20 mb-2 rounded-full" />
+              <h4 className="font-extrabold text-xs sm:text-sm tracking-tight leading-tight line-clamp-3 text-white drop-shadow">
+                {manga.title}
+              </h4>
+              <div className="w-5 h-0.5 mx-auto bg-white/20 mt-2 rounded-full" />
+            </div>
+
+            {/* Bottom details / barcode */}
+            <div className="relative z-10 pt-1.5 border-t border-white/15 flex items-center justify-between text-[9px] text-white/60 font-mono">
+              <span className="truncate max-w-[70px]">{genres[0] || "Featured"}</span>
+              <span className="tracking-widest text-[8px] opacity-70">|||| || |||</span>
+            </div>
           </div>
         )}
 
@@ -135,20 +211,20 @@ export default function MangaCard({ manga, similarityScore, tracking, rank }) {
       </div>
 
       {/* Card Info Content */}
-      <div className="p-4 flex flex-col flex-1 justify-between gap-3">
+      <div className="p-3 sm:p-3.5 flex flex-col flex-1 justify-between gap-2.5">
         <div>
-          <h3 className="font-bold text-foreground text-sm sm:text-base leading-snug line-clamp-2 group-hover:text-accent transition-colors">
+          <h3 className="font-bold text-foreground text-xs sm:text-sm leading-snug line-clamp-2 min-h-[2.25rem] sm:min-h-[2.5rem] group-hover:text-accent transition-colors">
             {manga.title}
           </h3>
 
-          <div className="flex items-center gap-2 mt-2 text-xs text-muted font-medium">
+          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] sm:text-xs text-muted font-medium truncate">
             {manga.year && <span>{manga.year}</span>}
             {manga.year && <span>•</span>}
             <span>{manga.chapters ? `${manga.chapters} Chs` : "Ongoing"}</span>
             {manga.source_count > 1 && (
               <>
                 <span>•</span>
-                <span>{manga.source_count} sources</span>
+                <span>{manga.source_count} srcs</span>
               </>
             )}
           </div>
@@ -156,11 +232,11 @@ export default function MangaCard({ manga, similarityScore, tracking, rank }) {
 
         {/* Genre Tags */}
         {genres.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap gap-1 pt-0.5">
             {genres.map((g) => (
               <span
                 key={g}
-                className="text-xs px-2.5 py-0.5 rounded-lg bg-surfaceHover text-muted font-semibold group-hover:border-accent/30 transition-colors"
+                className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-md bg-surfaceHover text-muted font-semibold group-hover:border-accent/30 transition-colors"
               >
                 {g}
               </span>
