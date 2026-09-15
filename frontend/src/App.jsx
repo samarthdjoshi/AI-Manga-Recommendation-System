@@ -26,9 +26,9 @@ export default function App() {
   return (
     <ThemeProvider>
       <ChatPageProvider>
-        <div className="min-h-screen bg-ink text-foreground transition-colors duration-200">
+        <div className="min-h-screen bg-ink text-foreground transition-colors duration-200 w-full overflow-x-hidden">
           <Header />
-          <main className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 py-6 sm:py-8 min-h-[calc(100vh-80px)] w-full">
+          <main className="mx-auto max-w-[1440px] px-3.5 sm:px-6 lg:px-8 py-5 sm:py-8 min-h-[calc(100vh-80px)] w-full overflow-x-hidden">
             <Routes>
               <Route path="/" element={<HomePage />} />
               <Route path="/home" element={<HomePage />} />

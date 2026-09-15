@@ -135,39 +135,39 @@ export default function HomePage() {
         </section>
       ) : (
         /* Guest Discovery Hero */
-        <section className="relative rounded-3xl overflow-hidden border border-border bg-gradient-to-b from-surface via-surface-elevated/40 to-ink p-8 sm:p-12 shadow-themeCard">
+        <section className="relative rounded-3xl overflow-hidden border border-border bg-gradient-to-b from-surface via-surface-elevated/40 to-ink p-5 sm:p-12 shadow-themeCard">
           <div className="absolute top-0 right-1/4 w-96 h-96 bg-accent/15 rounded-full blur-3xl pointer-events-none" />
 
-          <div className="relative z-10 max-w-4xl mx-auto text-center space-y-6">
-            <div className="inline-flex items-center gap-2 rounded-full bg-accent/15 text-accent text-xs font-extrabold px-4 py-1.5 border border-accent/25 shadow-sm">
+          <div className="relative z-10 max-w-4xl mx-auto text-center space-y-4 sm:space-y-6">
+            <div className="inline-flex items-center gap-1.5 sm:gap-2 rounded-full bg-accent/15 text-accent text-[11px] sm:text-xs font-extrabold px-3 sm:px-4 py-1 sm:py-1.5 border border-accent/25 shadow-sm max-w-full truncate">
               <span>✨</span>
-              <span>Unified Manga Discovery · 339,941 Verified Catalog Records</span>
+              <span className="truncate">Unified Manga Discovery · 339k+ Verified Records</span>
             </div>
 
-            <h1 className="text-3xl sm:text-5xl md:text-6xl font-black text-foreground tracking-tight leading-tight">
+            <h1 className="text-2xl sm:text-5xl md:text-6xl font-black text-foreground tracking-tight leading-tight">
               Explore the Next Universe in{" "}
-              <span className="text-accent underline decoration-accent/30 decoration-wavy underline-offset-8">
+              <span className="text-accent underline decoration-accent/30 decoration-wavy underline-offset-4 sm:underline-offset-8">
                 Manga & Manhwa
               </span>
             </h1>
 
-            <p className="text-muted text-sm sm:text-base max-w-xl mx-auto leading-relaxed">
+            <p className="text-muted text-xs sm:text-base max-w-xl mx-auto leading-relaxed">
               Real-time trending charts, curated community ratings, private library tracking, and AI vibe recommendations.
             </p>
 
-            <div className="max-w-xl mx-auto pt-2">
+            <div className="max-w-xl mx-auto pt-1 sm:pt-2">
               <SearchBar onSearch={handleSearch} />
             </div>
 
             {/* Quick Tag Pills */}
-            <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-xs">
-              <span className="text-muted font-bold">Trending searches:</span>
+            <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2 pt-1 text-[11px] sm:text-xs">
+              <span className="text-muted font-bold hidden sm:inline">Trending searches:</span>
               {["Solo Leveling", "Chainsaw Man", "Omniscient Reader", "One Piece", "Berserk", "Tower of God"].map((tag) => (
                 <button
                   key={tag}
                   type="button"
                   onClick={() => handleSearch(tag)}
-                  className="px-3 py-1 rounded-xl bg-surfaceHover border border-border text-foreground hover:border-accent hover:text-accent font-semibold transition"
+                  className="px-2.5 sm:px-3 py-1 rounded-xl bg-surfaceHover border border-border text-foreground hover:border-accent hover:text-accent font-semibold transition"
                 >
                   {tag}
                 </button>

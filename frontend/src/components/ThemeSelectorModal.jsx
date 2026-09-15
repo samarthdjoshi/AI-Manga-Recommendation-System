@@ -37,11 +37,11 @@ export default function ThemeSelectorModal() {
         if (e.target === e.currentTarget) closeThemeModal();
       }}
     >
-      <div className="w-full max-w-2xl bg-surface border border-border rounded-2xl shadow-2xl p-6 sm:p-8 max-h-[90vh] overflow-y-auto">
+      <div className="w-full max-w-2xl bg-surface border border-border rounded-2xl shadow-2xl p-4 sm:p-8 max-h-[90vh] overflow-y-auto overflow-x-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between pb-4 border-b border-border mb-6">
+        <div className="flex items-center justify-between pb-4 border-b border-border mb-5 sm:mb-6">
           <div>
-            <h2 id="theme-modal-title" className="text-xl font-bold text-foreground">
+            <h2 id="theme-modal-title" className="text-lg sm:text-xl font-bold text-foreground">
               Visual Themes & Appearance
             </h2>
             <p className="text-xs text-muted mt-0.5">
@@ -51,7 +51,7 @@ export default function ThemeSelectorModal() {
           <button
             type="button"
             onClick={closeThemeModal}
-            className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-surfaceHover transition-colors"
+            className="p-1.5 rounded-lg text-muted hover:text-foreground hover:bg-surfaceHover transition-colors shrink-0"
             aria-label="Close theme selector"
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -65,24 +65,25 @@ export default function ThemeSelectorModal() {
           <label className="text-xs font-semibold uppercase tracking-wider text-muted mb-2.5 block">
             Appearance Mode
           </label>
-          <div className="grid grid-cols-3 gap-2.5">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2.5">
             {[
-              { id: "dark", label: "Dark Mode", icon: "🌙" },
-              { id: "light", label: "Light Mode", icon: "☀️" },
-              { id: "system", label: "System Sync", icon: "💻" },
+              { id: "dark", label: "Dark", fullLabel: "Dark Mode", icon: "🌙" },
+              { id: "light", label: "Light", fullLabel: "Light Mode", icon: "☀️" },
+              { id: "system", label: "System", fullLabel: "System Sync", icon: "💻" },
             ].map((mode) => (
               <button
                 key={mode.id}
                 type="button"
                 onClick={() => setAppearance(mode.id)}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                className={`py-2 sm:py-2.5 px-1.5 sm:px-3 rounded-xl border text-[11px] sm:text-xs font-semibold flex items-center justify-center gap-1 sm:gap-2 transition-all ${
                   appearance === mode.id
                     ? "bg-accent text-accentFg border-accent shadow-md"
                     : "bg-surfaceHover text-foreground border-border hover:border-accent/40"
                 }`}
               >
                 <span>{mode.icon}</span>
-                <span>{mode.label}</span>
+                <span className="sm:hidden truncate">{mode.label}</span>
+                <span className="hidden sm:inline">{mode.fullLabel}</span>
               </button>
             ))}
           </div>

@@ -17,7 +17,7 @@ export default function DiscoveryCard({ item, rank }) {
     <Link
       to={targetLink}
       state={{ manga: item }}
-      className="group flex-shrink-0 w-[185px] sm:w-[215px] md:w-[230px] flex flex-col rounded-2xl bg-surface border border-border overflow-hidden hover:border-accent hover:shadow-themeCard transition-all duration-300 relative"
+      className="group flex-shrink-0 w-[150px] sm:w-[190px] md:w-[220px] flex flex-col rounded-2xl bg-surface border border-border overflow-hidden hover:border-accent hover:shadow-themeCard transition-all duration-300 relative"
     >
       {/* Cover Artwork Container */}
       <div className="aspect-[2/3] w-full bg-ink overflow-hidden relative shrink-0">
@@ -87,10 +87,10 @@ export default function DiscoveryCard({ item, rank }) {
       </div>
 
       {/* Content Details */}
-      <div className="p-4 flex flex-col flex-1 justify-between gap-2.5">
+      <div className="p-3 sm:p-4 flex flex-col flex-1 justify-between gap-2 sm:gap-2.5">
         <div>
           <h3
-            className="font-bold text-foreground text-sm sm:text-base leading-snug line-clamp-2 group-hover:text-accent transition-colors"
+            className="font-bold text-foreground text-xs sm:text-base leading-snug line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem] group-hover:text-accent transition-colors"
             title={item.title}
           >
             {item.title}
@@ -99,11 +99,11 @@ export default function DiscoveryCard({ item, rank }) {
 
         {/* Genre Chips */}
         {genres.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 pt-1">
+          <div className="flex flex-wrap gap-1 pt-0.5 sm:pt-1">
             {genres.map((g) => (
               <span
                 key={g}
-                className="text-xs px-2.5 py-0.5 rounded-lg bg-surfaceHover text-muted font-semibold group-hover:border-accent/30 transition-colors"
+                className="text-[10px] sm:text-xs px-2 sm:px-2.5 py-0.5 rounded-md sm:rounded-lg bg-surfaceHover text-muted font-semibold group-hover:border-accent/30 transition-colors"
               >
                 {g}
               </span>

@@ -45,18 +45,18 @@ export default function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-ink/95 backdrop-blur-xl transition-colors">
-      <div className="mx-auto max-w-[1440px] px-4 sm:px-6 lg:px-8 h-20 flex items-center justify-between gap-3 sm:gap-6">
+      <div className="mx-auto max-w-[1440px] px-3 sm:px-6 lg:px-8 h-16 sm:h-20 flex items-center justify-between gap-2 sm:gap-6">
         {/* Brand Logo */}
-        <Link to="/" className="flex items-center gap-3 shrink-0 group py-1">
-          <div className="h-11 w-11 rounded-2xl bg-gradient-to-tr from-accent via-indigo-500 to-purple-500 flex items-center justify-center font-black text-white text-xl shadow-lg shadow-accent/25 group-hover:scale-105 group-hover:rotate-2 transition-all duration-300">
+        <Link to="/" className="flex items-center gap-2.5 sm:gap-3 shrink-0 group py-1">
+          <div className="h-9 w-9 sm:h-11 sm:w-11 rounded-xl sm:rounded-2xl bg-gradient-to-tr from-accent via-indigo-500 to-purple-500 flex items-center justify-center font-black text-white text-lg sm:text-xl shadow-md shadow-accent/20 group-hover:scale-105 transition-all duration-300">
             <span>⚡</span>
           </div>
           <div className="flex flex-col">
             <div className="flex items-center gap-1.5">
-              <span className="text-xl font-black tracking-tight text-foreground group-hover:text-accent transition-colors">
+              <span className="text-lg sm:text-xl font-black tracking-tight text-foreground group-hover:text-accent transition-colors">
                 MangaVerse
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-full bg-accent/15 text-accent font-extrabold uppercase tracking-wider border border-accent/25">
+              <span className="text-[9px] sm:text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-accent/15 text-accent font-extrabold uppercase tracking-wider border border-accent/25">
                 PRO
               </span>
             </div>
@@ -95,16 +95,16 @@ export default function Header() {
         </div>
 
         {/* Right Actions */}
-        <div className="flex items-center gap-2.5 sm:gap-3.5 shrink-0">
+        <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
           {/* Theme Switcher Button */}
           <button
             type="button"
             onClick={openThemeModal}
-            className="h-10 px-3 rounded-xl border border-border bg-surface text-foreground hover:border-accent/50 hover:bg-surfaceHover transition-all flex items-center gap-2 text-xs font-semibold shadow-sm"
+            className="h-9 sm:h-10 px-2 sm:px-3 rounded-xl border border-border bg-surface text-foreground hover:border-accent/50 hover:bg-surfaceHover transition-all flex items-center justify-center gap-1.5 text-xs font-semibold shadow-sm"
             title="Choose visual theme and appearance"
             aria-label="Open visual theme selector"
           >
-            <span className="text-base">
+            <span className="text-sm sm:text-base">
               {appearance === "system" ? "💻" : isDark ? "🌙" : "☀️"}
             </span>
             <span className="hidden md:inline text-xs font-bold text-foreground">
@@ -254,16 +254,16 @@ export default function Header() {
               </div>
             </div>
           ) : (
-            <div className="flex items-center gap-2 sm:gap-3">
+            <div className="hidden sm:flex items-center gap-2 sm:gap-3">
               <Link
                 to="/login"
-                className="px-4 py-2 text-sm font-bold text-foreground hover:text-accent transition-colors"
+                className="px-3.5 py-2 text-sm font-bold text-foreground hover:text-accent transition-colors"
               >
                 Sign In
               </Link>
               <Link
                 to="/register"
-                className="px-5 py-2 rounded-xl bg-accent text-white text-sm font-bold hover:bg-accentHover transition-colors shadow-md shadow-accent/20"
+                className="px-4.5 py-2 rounded-xl bg-accent text-white text-sm font-bold hover:bg-accentHover transition-colors shadow-md shadow-accent/20"
               >
                 Join Free
               </Link>
@@ -274,7 +274,7 @@ export default function Header() {
           <button
             type="button"
             onClick={() => setMobileMenuOpen((prev) => !prev)}
-            className="xl:hidden h-10 w-10 flex items-center justify-center rounded-xl border border-border text-foreground hover:bg-surfaceHover transition-colors"
+            className="xl:hidden h-9 w-9 sm:h-10 sm:w-10 flex items-center justify-center rounded-xl border border-border text-foreground hover:bg-surfaceHover transition-colors shrink-0"
             aria-label="Toggle mobile menu"
             aria-expanded={mobileMenuOpen}
           >
@@ -292,19 +292,39 @@ export default function Header() {
       {/* Mobile Drawer */}
       {mobileMenuOpen && (
         <div className="xl:hidden border-t border-border bg-surface px-4 py-5 space-y-4 animate-fadeIn">
+          {/* Guest Action Callout on Mobile */}
+          {!user && (
+            <div className="grid grid-cols-2 gap-2 pb-1">
+              <Link
+                to="/login"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-2.5 px-3 rounded-xl text-center border border-border bg-surfaceHover text-foreground text-xs sm:text-sm font-bold hover:border-accent transition"
+              >
+                Sign In
+              </Link>
+              <Link
+                to="/register"
+                onClick={() => setMobileMenuOpen(false)}
+                className="py-2.5 px-3 rounded-xl text-center bg-accent text-white text-xs sm:text-sm font-bold hover:bg-accentHover transition shadow-md shadow-accent/20"
+              >
+                Join Free
+              </Link>
+            </div>
+          )}
+
           {/* Mobile Search */}
           <div className="sm:hidden">
             <SearchBar onSearch={handleSearch} compact />
           </div>
 
           {/* Navigation Links */}
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
             {navLinks.map((link) => (
               <Link
                 key={link.path}
                 to={link.path}
                 onClick={() => setMobileMenuOpen(false)}
-                className={`py-3 px-4 rounded-xl text-sm font-bold text-center border transition-all ${
+                className={`py-2.5 sm:py-3 px-3 sm:px-4 rounded-xl text-xs sm:text-sm font-bold text-center border transition-all ${
                   location.pathname === link.path
                     ? "bg-accent text-white border-accent shadow-md shadow-accent/20"
                     : "bg-surfaceHover text-foreground border-border hover:border-accent/40"
