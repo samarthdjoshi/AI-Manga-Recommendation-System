@@ -53,6 +53,8 @@ from auth.schemas import (
     CustomListResponse,
     CustomListsListResponse,
     CustomListUpdateRequest,
+    DeleteAccountRequest,
+    DeleteAccountResponse,
     FavoriteListResponse,
     FavoriteResponse,
     FollowToggleResponse,
@@ -1619,6 +1621,39 @@ def update_account(
         created_at=current_user.created_at.isoformat(),
         followers_count=followers_count,
         following_count=following_count,
+    )
+
+
+@router.delete("/account", response_model=DeleteAccountResponse)
+def delete_account(
+    payload: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> DeleteAccountResponse:
+    if not verify_password(payload.password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Incorrect password. Account deletion aborted.")
+
+    user_id = current_user.id
+
+    # Clean up relations where user might be referenced as actor or follower
+    db.query(Notification).filter(
+        (Notification.user_id == user_id) | (Notification.actor_id == user_id)
+    ).delete(synchronize_session=False)
+
+    db.query(UserFollow).filter(
+        (UserFollow.follower_id == user_id) | (UserFollow.following_id == user_id)
+    ).delete(synchronize_session=False)
+
+    db.query(ActivityLike).filter(ActivityLike.user_id == user_id).delete(synchronize_session=False)
+    db.query(ActivityReply).filter(ActivityReply.user_id == user_id).delete(synchronize_session=False)
+    db.query(CustomListEntry).filter(CustomListEntry.user_id == user_id).delete(synchronize_session=False)
+
+    # Delete the user, which cascades delete-orphan to favorites, tracking_entries, custom_lists, private_tags, activities
+    db.delete(current_user)
+    db.commit()
+
+    return DeleteAccountResponse(
+        message="Account permanently deleted. You may now register a new account with your email."
     )
 
 

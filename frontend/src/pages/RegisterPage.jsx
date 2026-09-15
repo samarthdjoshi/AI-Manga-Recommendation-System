@@ -1,10 +1,12 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "../context/useAuth";
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const justDeleted = searchParams.get("deleted") === "true";
 
   const [email, setEmail] = useState("");
   const [username, setUsername] = useState("");
@@ -47,6 +49,12 @@ export default function RegisterPage() {
         <p className="text-xs sm:text-sm text-foreground/60 mb-6">
           Join MangaVerse to track reading progress, bookmark favorites, and get AI recommendations.
         </p>
+
+        {justDeleted && (
+          <div className="mb-5 p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-semibold leading-relaxed animate-fadeIn">
+            ✓ Your account was permanently deleted. Your email is now free — you can create a fresh new account below!
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

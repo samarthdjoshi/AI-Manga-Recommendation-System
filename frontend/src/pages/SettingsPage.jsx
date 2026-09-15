@@ -7,6 +7,7 @@ import {
   updateMyProfile,
   updateAccount,
   changePassword,
+  deleteAccount,
 } from "../api/client";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
@@ -53,7 +54,7 @@ const TITLE_LANGUAGES = [
 export default function SettingsPage() {
   const { tab } = useParams();
   const navigate = useNavigate();
-  const { token, user, loading: authLoading } = useAuth();
+  const { token, user, loading: authLoading, logout } = useAuth();
   const {
     appearance,
     setAppearance,
@@ -88,6 +89,12 @@ export default function SettingsPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [savingPassword, setSavingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState("");
+
+  // Delete account fields
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   // Lists & Scoring
   const [savingLists, setSavingLists] = useState(false);
@@ -202,6 +209,27 @@ export default function SettingsPage() {
       setPasswordError(err?.response?.data?.detail || "Failed to change password.");
     } finally {
       setSavingPassword(false);
+    }
+  }
+
+  async function handleDeleteAccount(e) {
+    e.preventDefault();
+    if (!token || !deletePassword) return;
+    try {
+      setDeletingAccount(true);
+      setDeleteError("");
+      await deleteAccount(deletePassword, token);
+      try {
+        localStorage.removeItem("mangaverse_library_cache");
+      } catch {}
+      logout();
+      navigate("/register?deleted=true");
+    } catch (err) {
+      setDeleteError(
+        err?.response?.data?.detail || "Failed to delete account. Please verify your password."
+      );
+    } finally {
+      setDeletingAccount(false);
     }
   }
 
@@ -548,6 +576,38 @@ export default function SettingsPage() {
                   </button>
                 </form>
               </div>
+
+              {/* Danger Zone: Delete Account */}
+              <div className="bg-surface border border-red-500/30 rounded-2xl p-6 md:p-8 space-y-4 shadow-themeCard">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-md bg-red-500/10 text-red-400 text-xs font-bold uppercase tracking-wider mb-2">
+                      <span>⚠️</span>
+                      <span>Danger Zone</span>
+                    </div>
+                    <h2 className="text-xl font-black text-foreground">Delete Account</h2>
+                    <p className="text-sm text-muted mt-1 max-w-xl leading-relaxed">
+                      Permanently delete your MangaVerse account, reading tracker, custom lists, private tags, favorites, and profile data.
+                      Once deleted, this action cannot be undone. Your email address ({profile?.email || email}) will immediately become available again if you ever wish to create a fresh new account.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDeleteModalOpen(true);
+                      setDeletePassword("");
+                      setDeleteError("");
+                    }}
+                    className="px-5 py-2.5 rounded-xl border border-red-500/40 bg-red-500/10 hover:bg-red-500/20 text-red-400 font-bold text-sm transition-all shadow-sm flex items-center gap-2 cursor-pointer"
+                  >
+                    <span>🗑️</span>
+                    <span>Delete Account…</span>
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -805,6 +865,82 @@ export default function SettingsPage() {
           )}
         </main>
       </div>
+
+      {/* DELETE ACCOUNT CONFIRMATION MODAL */}
+      {deleteModalOpen && (
+        <div
+          onClick={() => !deletingAccount && setDeleteModalOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-3xl border border-red-500/40 bg-surface p-6 sm:p-7 shadow-2xl space-y-5"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-500 text-2xl flex items-center justify-center shrink-0">
+                🗑️
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-foreground">Delete Your Account?</h3>
+                <p className="text-xs text-muted">This action is permanent and irreversible.</p>
+              </div>
+            </div>
+
+            <div className="text-xs text-muted space-y-2 bg-surfaceHover/60 p-3.5 rounded-2xl border border-border">
+              <p className="font-semibold text-foreground">What will be permanently wiped:</p>
+              <ul className="list-disc pl-4 space-y-1 text-muted">
+                <li>Your profile and login credentials</li>
+                <li>All reading tracker history and progress</li>
+                <li>Favorites, custom lists, and private tags</li>
+                <li>Activity feed posts, comments, and replies</li>
+              </ul>
+              <p className="pt-1 text-accent font-semibold">
+                ✓ Your email address will be completely released so you can register a new account anytime.
+              </p>
+            </div>
+
+            {deleteError && (
+              <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs font-semibold">
+                {deleteError}
+              </div>
+            )}
+
+            <form onSubmit={handleDeleteAccount} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-foreground mb-1.5">
+                  Confirm your password to proceed:
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={deletePassword}
+                  onChange={(e) => setDeletePassword(e.target.value)}
+                  placeholder="Enter your current password"
+                  className="w-full bg-surfaceHover border border-border rounded-xl px-4 py-2.5 text-sm text-foreground placeholder-muted focus:outline-none focus:border-red-500 focus:ring-1 focus:ring-red-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={deletingAccount}
+                  onClick={() => setDeleteModalOpen(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-border text-xs font-bold text-muted hover:text-foreground transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={deletingAccount || !deletePassword}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-black transition-colors shadow-sm disabled:opacity-50 cursor-pointer"
+                >
+                  {deletingAccount ? "Deleting Account…" : "Permanently Delete"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

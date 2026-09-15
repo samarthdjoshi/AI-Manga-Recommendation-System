@@ -653,5 +653,69 @@ def test_bulk_delete_library(client: TestClient) -> None:
     assert fav_after["count"] == 0
 
 
+def test_delete_account_and_re_register(client: TestClient) -> None:
+    # 1. Register a user
+    email = "del_account_test@example.com"
+    reg_res = client.post(
+        "/auth/register",
+        json={"email": email, "username": "original_user", "password": "Password123!"},
+    )
+    assert reg_res.status_code == 201
+    token = reg_res.json()["access_token"]
+    headers = _auth_header(token)
+
+    # 2. Add some library items
+    client.put("/auth/tracking/anilist:21", json={"status": "reading", "progress": 10}, headers=headers)
+    client.post("/auth/favorites/anilist:21", headers=headers)
+
+    # 3. Verify concurrent registration with same email is blocked
+    dup_res = client.post(
+        "/auth/register",
+        json={"email": email, "username": "another_user", "password": "Password123!"},
+    )
+    assert dup_res.status_code == 400
+    assert "Email already registered" in dup_res.json()["detail"]
+
+    # 4. Attempt deletion with wrong password -> rejected
+    bad_del = client.request(
+        "DELETE",
+        "/auth/account",
+        json={"password": "WrongPassword!"},
+        headers=headers,
+    )
+    assert bad_del.status_code == 400
+    assert "Incorrect password" in bad_del.json()["detail"]
+
+    # 5. Delete account with correct password -> success
+    good_del = client.request(
+        "DELETE",
+        "/auth/account",
+        json={"password": "Password123!"},
+        headers=headers,
+    )
+    assert good_del.status_code == 200
+    assert "Account permanently deleted" in good_del.json()["message"]
+
+    # 6. Old token is now invalid
+    me_res = client.get("/auth/me", headers=headers)
+    assert me_res.status_code == 401
+
+    # 7. Re-register a brand new user using the EXACT SAME EMAIL
+    new_reg = client.post(
+        "/auth/register",
+        json={"email": email, "username": "fresh_brand_new_user", "password": "NewPassword123!"},
+    )
+    assert new_reg.status_code == 201
+    new_data = new_reg.json()
+    assert new_data["user"]["email"] == email
+    assert new_data["user"]["username"] == "fresh_brand_new_user"
+
+    # 8. Brand new user starts with completely empty library
+    new_headers = _auth_header(new_data["access_token"])
+    new_tracking = client.get("/auth/tracking", headers=new_headers).json()
+    assert new_tracking["count"] == 0
+
+
+
 
 

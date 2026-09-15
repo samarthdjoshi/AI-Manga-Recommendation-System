@@ -326,3 +326,15 @@ class ChapterIncrementResponse(BaseModel):
     status: str
     activity_created: bool
 
+
+# --- Account Deletion Schemas ---
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str = Field(min_length=1, max_length=128)
+
+
+class DeleteAccountResponse(BaseModel):
+    message: str
+
+

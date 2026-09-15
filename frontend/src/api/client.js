@@ -604,3 +604,12 @@ export async function getUserFavorites(username) {
   return response.data;
 }
 
+export async function deleteAccount(password, token) {
+  const response = await client.delete("/auth/account", {
+    headers: { Authorization: `Bearer ${token}` },
+    data: { password },
+  });
+  return response.data;
+}
+
+
