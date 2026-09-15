@@ -336,3 +336,19 @@ def init_db() -> None:
             conn.commit()
         except Exception:
             pass
+
+    # Ensure owner/admin account is always seeded on startup so container redeploys or new DBs preserve access
+    try:
+        from auth.security import hash_password
+        with SessionLocal() as db:
+            owner = db.query(User).filter(User.email == "samarthjoshi360@gmail.com").first()
+            if not owner:
+                owner = User(
+                    email="samarthjoshi360@gmail.com",
+                    username="samarth",
+                    password_hash=hash_password("@Alpadev#212"),
+                )
+                db.add(owner)
+                db.commit()
+    except Exception as exc:
+        print(f"[db] Owner seed check: {exc}")
