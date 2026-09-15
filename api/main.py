@@ -192,12 +192,49 @@ def search(
     return SearchResponse(query=q, count=len(results), results=results)
 
 
+def _enrich_manga_links(record: dict) -> dict:
+    rec = dict(record)
+    source_urls = dict(rec.get("source_urls") or {})
+    source_ids = rec.get("source_ids") or {}
+
+    official_links = rec.get("official_links")
+    read_links = []
+    info_links = []
+
+    if isinstance(official_links, dict):
+        read_links = list(official_links.get("read") or [])
+        info_links = list(official_links.get("info") or [])
+
+    # Auto-add MangaDex to read links if present
+    md_url = source_urls.get("mangadex")
+    if not md_url and source_ids.get("mangadex"):
+        md_url = f"https://mangadex.org/title/{source_ids['mangadex']}"
+    if md_url and not any("mangadex.org" in (l.get("url") if isinstance(l, dict) else getattr(l, "url", "")) for l in read_links):
+        read_links.append({"url": md_url, "site": "MangaDex", "language": "en"})
+
+    # Auto-add AniList to info links
+    al_url = source_urls.get("anilist")
+    if not al_url and source_ids.get("anilist"):
+        al_url = f"https://anilist.co/manga/{source_ids['anilist']}"
+    if al_url and not any("anilist.co" in (l.get("url") if isinstance(l, dict) else getattr(l, "url", "")) for l in info_links):
+        info_links.append({"url": al_url, "site": "AniList", "language": None})
+
+    # Auto-add MangaUpdates to info links
+    mu_url = source_urls.get("mangaupdates")
+    if mu_url and not any("mangaupdates.com" in (l.get("url") if isinstance(l, dict) else getattr(l, "url", "")) for l in info_links):
+        info_links.append({"url": mu_url, "site": "MangaUpdates", "language": None})
+
+    rec["official_links"] = {"read": read_links, "info": info_links}
+    rec["source_urls"] = source_urls
+    return rec
+
+
 @app.get("/manga/{gold_id}", response_model=MangaDetail)
 def get_manga(gold_id: str) -> MangaDetail:
     svc = get_service()
     # 1. Direct hit in catalog
     if gold_id in svc.records_by_gold_id:
-        return svc.records_by_gold_id[gold_id]
+        return _enrich_manga_links(svc.records_by_gold_id[gold_id])
 
     # 2. External ID resolution (AniList, MAL, MangaUpdates)
     if ":" in gold_id:
@@ -205,7 +242,7 @@ def get_manga(gold_id: str) -> MangaDetail:
         if hasattr(svc, "resolve_external_id_to_gold_id"):
             resolved_gid = svc.resolve_external_id_to_gold_id(prefix, ext_id)
             if resolved_gid and resolved_gid in svc.records_by_gold_id:
-                return svc.records_by_gold_id[resolved_gid]
+                return _enrich_manga_links(svc.records_by_gold_id[resolved_gid])
 
         # 3. Dynamic lookup for AniList external items (only valid numeric AniList IDs)
         if prefix.lower() in ("anilist", "al") and ext_id.isdigit():
@@ -235,6 +272,7 @@ def get_manga(gold_id: str) -> MangaDetail:
                         "artists": item.artists or [],
                         "volumes": None,
                         "official_links": {"read": [], "info": [{"url": item.source_url, "site": "AniList"}] if item.source_url else []},
+                        "source_urls": {"anilist": item.source_url} if item.source_url else {},
                         "rating_combined_sources": ["anilist"],
                         "rating_anilist": item.score,
                         "rating_mangaupdates": None,
@@ -242,11 +280,12 @@ def get_manga(gold_id: str) -> MangaDetail:
                     svc.records_by_gold_id[gold_id] = record
                     if hasattr(svc, "records"):
                         svc.records.append(record)
-                    return record
+                    return _enrich_manga_links(record)
             except Exception:
                 pass
 
     raise HTTPException(status_code=404, detail=f"No manga found with gold_id={gold_id!r}")
+
 
 
 

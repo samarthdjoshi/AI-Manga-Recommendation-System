@@ -41,9 +41,11 @@ class MangaDetail(MangaSummary):
     artists: list[str] = []
     volumes: int | None = None
     official_links: OfficialLinks | None = None
+    source_urls: dict[str, str] | None = None
     rating_combined_sources: list[str] = []
     rating_anilist: float | None = None
     rating_mangaupdates: float | None = None
+
 
 
 class RecommendationResult(MangaSummary):

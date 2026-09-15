@@ -216,29 +216,143 @@ export default function MangaDetailPage() {
             </button>
           </div>
 
-          {/* Official Reading Links */}
-          {manga.official_links && manga.official_links.read && manga.official_links.read.length > 0 && (
-            <div className="rounded-2xl border border-border bg-surface p-4 space-y-2 shadow-sm">
-              <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-muted">
-                Official Reading Sources
+          {/* Where to Read & Community Sources */}
+          <div className="rounded-2xl border border-border bg-surface p-4 space-y-3 shadow-sm">
+            <div className="flex items-center justify-between border-b border-border/60 pb-2">
+              <h3 className="text-[11px] font-extrabold uppercase tracking-wider text-muted flex items-center gap-1.5">
+                <span>📖</span>
+                <span>Where to Read</span>
               </h3>
-              <div className="flex flex-wrap gap-2">
-                {manga.official_links.read.map((link) => (
-                  <a
-                    key={link.url}
-                    href={link.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-xs font-bold px-3 py-2 rounded-xl bg-accentSoft text-accent border border-accent/20 hover:bg-accent hover:text-accentFg transition-all flex items-center gap-1.5"
-                  >
-                    <span>📖</span>
-                    <span>{link.site || "Read"}</span>
-                    {link.language && <span className="text-[10px] text-muted">({link.language})</span>}
-                  </a>
-                ))}
+              <span className="text-[10px] text-muted font-bold">Online Readers</span>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              {/* Direct Reading Links from Official / Catalog */}
+              {manga.official_links?.read?.map((link) => (
+                <a
+                  key={link.url}
+                  href={link.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold px-3 py-2 rounded-xl bg-accentSoft text-accent border border-accent/20 hover:bg-accent hover:text-accentFg transition-all flex items-center justify-between group"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>⚡</span>
+                    <span>Read on {link.site || "Platform"}</span>
+                  </span>
+                  <span className="text-[10px] opacity-70 group-hover:translate-x-0.5 transition-transform">↗</span>
+                </a>
+              ))}
+
+              {/* Direct MangaDex Reader (if not already listed in official_links) */}
+              {manga.source_urls?.mangadex && !manga.official_links?.read?.some((l) => l.url.includes("mangadex.org")) && (
+                <a
+                  href={manga.source_urls.mangadex}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-bold px-3 py-2 rounded-xl bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500 hover:text-slate-950 transition-all flex items-center justify-between group"
+                >
+                  <span className="flex items-center gap-1.5">
+                    <span>📙</span>
+                    <span>Read on MangaDex</span>
+                  </span>
+                  <span className="text-[10px] opacity-70 group-hover:translate-x-0.5 transition-transform">↗</span>
+                </a>
+              )}
+
+              {/* Quick Reader Search Actions */}
+              <div className="grid grid-cols-2 gap-2 pt-1">
+                <a
+                  href={`https://mangadex.org/titles?q=${encodeURIComponent(manga.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-surfaceHover border border-border text-foreground hover:border-accent hover:text-accent transition-all text-center"
+                >
+                  MangaDex ↗
+                </a>
+                <a
+                  href={`https://mangaplus.shueisha.co.jp/search_result?keyword=${encodeURIComponent(manga.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-surfaceHover border border-border text-foreground hover:border-accent hover:text-accent transition-all text-center"
+                >
+                  MangaPlus ↗
+                </a>
+                <a
+                  href={`https://asuracomic.net/series?name=${encodeURIComponent(manga.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-surfaceHover border border-border text-foreground hover:border-accent hover:text-accent transition-all text-center"
+                >
+                  Asura Scans ↗
+                </a>
+                <a
+                  href={`https://www.google.com/search?q=${encodeURIComponent("read " + manga.title + " manga online")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[11px] font-bold px-2.5 py-1.5 rounded-lg bg-surfaceHover border border-border text-foreground hover:border-accent hover:text-accent transition-all text-center"
+                >
+                  Google Reader ↗
+                </a>
               </div>
             </div>
-          )}
+
+            {/* Official External Trackers & DB */}
+            <div className="pt-2 border-t border-border/60">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-muted block mb-1.5">
+                Database & Trackers
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {manga.source_urls?.anilist ? (
+                  <a
+                    href={manga.source_urls.anilist}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20"
+                  >
+                    AniList
+                  </a>
+                ) : (
+                  <a
+                    href={`https://anilist.co/search/manga?search=${encodeURIComponent(manga.title)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold px-2 py-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20"
+                  >
+                    AniList
+                  </a>
+                )}
+                <a
+                  href={`https://myanimelist.net/manga.php?q=${encodeURIComponent(manga.title)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] font-bold px-2 py-1 rounded-md bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20"
+                >
+                  MyAnimeList
+                </a>
+                {manga.source_urls?.mangaupdates ? (
+                  <a
+                    href={manga.source_urls.mangaupdates}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                  >
+                    MangaUpdates
+                  </a>
+                ) : (
+                  <a
+                    href={`https://www.mangaupdates.com/series.html?search=${encodeURIComponent(manga.title)}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-bold px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20"
+                  >
+                    MangaUpdates
+                  </a>
+                )}
+              </div>
+            </div>
+          </div>
+
 
           {/* Metadata Fact Sheet Sidebar */}
           <div className="rounded-2xl border border-border bg-surface p-4 space-y-3 text-xs shadow-sm">
