@@ -215,10 +215,8 @@ def get_chat_retriever():
                 from ml.recommender.chat_retrieval import ChatRetriever
                 chat_retriever = ChatRetriever()
             except Exception as exc:
-                raise HTTPException(
-                    status_code=503,
-                    detail="The AI assistant is temporarily unavailable. Please try again shortly.",
-                ) from exc
+                print(f"[chat] Semantic retriever initialization failed ({type(exc).__name__}: {exc}). Using catalog search fallback.")
+                return None
     return chat_retriever
 
 
