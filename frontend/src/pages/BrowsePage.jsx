@@ -87,6 +87,7 @@ export default function BrowsePage() {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     browseManga({
       q: query,
@@ -123,24 +124,7 @@ export default function BrowsePage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    query,
-    filters.sort,
-    filters.genres,
-    filters.excludeGenres,
-    filters.status,
-    filters.genreMatch,
-    filters.hideExplicit,
-    filters.hideDoujinshi,
-    filters.yearMin,
-    filters.yearMax,
-    filters.minChapters,
-    filters.maxChapters,
-    filters.minRating,
-    filters.minSources,
-    filters.hasOfficialLinks,
-    page,
-  ]);
+  }, [searchParams]);
 
   const handleQueryChange = useCallback(
     (newQuery) => {

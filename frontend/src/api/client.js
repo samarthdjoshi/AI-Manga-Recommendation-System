@@ -30,7 +30,30 @@ export function clearApiCache(prefix = "") {
 }
 
 export async function cachedGet(url, config = {}, ttlMs = 300000) {
-  const paramsKey = config.params ? JSON.stringify(config.params) : "";
+  let paramsKey = "";
+  if (config.params) {
+    if (config.params instanceof URLSearchParams) {
+      paramsKey = config.params.toString();
+    } else if (typeof config.params === "object") {
+      try {
+        const usp = new URLSearchParams();
+        for (const [k, v] of Object.entries(config.params)) {
+          if (v != null) {
+            if (Array.isArray(v)) {
+              v.forEach((val) => usp.append(k, val));
+            } else {
+              usp.append(k, v);
+            }
+          }
+        }
+        paramsKey = usp.toString();
+      } catch {
+        paramsKey = JSON.stringify(config.params);
+      }
+    } else {
+      paramsKey = String(config.params);
+    }
+  }
   const authHeader = config.headers?.Authorization || "";
   const cacheKey = `${url}?${paramsKey}#${authHeader}`;
   const now = Date.now();
@@ -160,7 +183,7 @@ export async function browseManga({
   params.append("limit", limit);
   params.append("offset", offset);
 
-  return cachedGet("/browse", { params }, 180000);
+  return cachedGet("/browse", { params }, 30000);
 }
 
 export async function getGenres() {
