@@ -61,29 +61,36 @@ export default function MangaDetailPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
+    setCoverFailed(false);
+    setError(null);
+
     Promise.all([
       getManga(goldId).catch((err) => {
-        if (initialManga) return initialManga;
+        if (passedItem) return initialManga;
         throw err;
       }),
       getRecommendations(goldId, 10).catch(() => ({ results: [] })),
     ])
       .then(([mangaData, recData]) => {
         if (cancelled) return;
-        setManga(mangaData);
+        const mergedManga = {
+          ...mangaData,
+          description: mangaData.description || passedItem?.description || null,
+        };
+        setManga(mergedManga);
         setRecommendations(recData.results || []);
         setPageManga({ gold_id: mangaData.gold_id, title: mangaData.title });
         setError(null);
       })
       .catch(() => {
-        if (!cancelled && !initialManga) {
+        if (!cancelled) {
           setError("Couldn't load this title. It may not exist, or the API is unreachable.");
         }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
-
 
     return () => {
       cancelled = true;
@@ -413,7 +420,7 @@ export default function MangaDetailPage() {
         </div>
 
         {/* Right Column: Title, Synopsis, Meters, and Interactive Tracking */}
-        <div className="space-y-6 min-w-0">
+        <div className="space-y-6 min-w-0 pt-3 sm:pt-6 lg:pt-12">
           {/* Title and Top Chips */}
           <div className="space-y-3">
             <h1 className="text-2xl sm:text-4xl lg:text-5xl font-black text-foreground tracking-tight leading-tight">
@@ -436,16 +443,21 @@ export default function MangaDetailPage() {
           </div>
 
           {/* Synopsis */}
-          {description && (
-            <div className="rounded-3xl bg-surface border border-border p-6 shadow-sm space-y-2">
-              <h2 className="text-xs font-extrabold uppercase tracking-wider text-muted">
-                Synopsis & Description
-              </h2>
+          <div className="rounded-3xl bg-surface border border-border p-6 shadow-sm space-y-2">
+            <h2 className="text-xs font-extrabold uppercase tracking-wider text-muted flex items-center gap-1.5">
+              <span>📖</span>
+              <span>Synopsis & Description</span>
+            </h2>
+            {description ? (
               <p className="text-foreground/90 leading-relaxed text-sm sm:text-base text-justify whitespace-pre-line [hyphens:auto]">
                 {description}
               </p>
-            </div>
-          )}
+            ) : (
+              <p className="text-muted leading-relaxed text-sm italic">
+                No official synopsis has been added to our catalog for this title yet. You can find more details, reader comments, and start reading using the official links in the sidebar.
+              </p>
+            )}
+          </div>
 
           {/* Manga Meter & Vibe Radar */}
           <div className="space-y-6">

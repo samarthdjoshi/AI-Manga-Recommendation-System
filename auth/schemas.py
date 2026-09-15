@@ -19,8 +19,13 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    email: str
     password: str
+
+
+class ResetPasswordRequest(BaseModel):
+    email: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class UserResponse(BaseModel):

@@ -282,7 +282,29 @@ def get_manga(gold_id: str) -> MangaDetail:
     svc = get_service()
     # 1. Direct hit in catalog
     if gold_id in svc.records_by_gold_id:
-        return _enrich_manga_links(svc.records_by_gold_id[gold_id])
+        record = dict(svc.records_by_gold_id[gold_id])
+        if not record.get("description"):
+            al_id = None
+            if gold_id.startswith("anilist:"):
+                part = gold_id.split(":", 1)[1]
+                if part.isdigit():
+                    al_id = int(part)
+            elif record.get("source_ids", {}).get("anilist"):
+                try:
+                    al_id = int(record["source_ids"]["anilist"])
+                except (ValueError, TypeError):
+                    pass
+            if al_id:
+                try:
+                    from services.manga_discovery.providers.anilist import AniListDiscoveryProvider
+                    provider = AniListDiscoveryProvider()
+                    ext_item = provider.get_manga_by_id(al_id)
+                    if ext_item and ext_item.description:
+                        record["description"] = ext_item.description
+                        svc.records_by_gold_id[gold_id]["description"] = ext_item.description
+                except Exception:
+                    pass
+        return _enrich_manga_links(record)
 
     # 2. External ID resolution (AniList, MAL, MangaUpdates)
     if ":" in gold_id:
@@ -290,7 +312,18 @@ def get_manga(gold_id: str) -> MangaDetail:
         if hasattr(svc, "resolve_external_id_to_gold_id"):
             resolved_gid = svc.resolve_external_id_to_gold_id(prefix, ext_id)
             if resolved_gid and resolved_gid in svc.records_by_gold_id:
-                return _enrich_manga_links(svc.records_by_gold_id[resolved_gid])
+                record = dict(svc.records_by_gold_id[resolved_gid])
+                if not record.get("description") and prefix.lower() in ("anilist", "al") and ext_id.isdigit():
+                    try:
+                        from services.manga_discovery.providers.anilist import AniListDiscoveryProvider
+                        provider = AniListDiscoveryProvider()
+                        ext_item = provider.get_manga_by_id(int(ext_id))
+                        if ext_item and ext_item.description:
+                            record["description"] = ext_item.description
+                            svc.records_by_gold_id[resolved_gid]["description"] = ext_item.description
+                    except Exception:
+                        pass
+                return _enrich_manga_links(record)
 
         # 3. Dynamic lookup for AniList external items (only valid numeric AniList IDs)
         if prefix.lower() in ("anilist", "al") and ext_id.isdigit():

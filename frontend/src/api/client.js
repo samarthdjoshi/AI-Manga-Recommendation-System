@@ -113,6 +113,14 @@ export async function loginUser({ email, password }) {
   return response.data;
 }
 
+export async function resetPassword({ email, newPassword }) {
+  const response = await client.post("/auth/reset-password", {
+    email,
+    new_password: newPassword,
+  });
+  return response.data;
+}
+
 export async function getMe(token) {
   const response = await client.get("/auth/me", {
     headers: { Authorization: `Bearer ${token}` },

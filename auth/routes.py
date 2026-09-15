@@ -64,6 +64,7 @@ from auth.schemas import (
     PrivateTagSetRequest,
     PublicUserProfileResponse,
     RegisterRequest,
+    ResetPasswordRequest,
     TokenResponse,
     TrackingListResponse,
     TrackingResponse,
@@ -166,7 +167,12 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> TokenRe
 
 @router.post("/login", response_model=TokenResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    user = db.query(User).filter(User.email == payload.email).first()
+    login_id = payload.email.strip()
+    user = (
+        db.query(User)
+        .filter((User.email.ilike(login_id)) | (User.username.ilike(login_id)))
+        .first()
+    )
 
     # Intentionally identical error for "no such user" and "wrong password" -
     # revealing which one it was lets an attacker enumerate valid emails.
@@ -175,6 +181,28 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
     token = create_access_token(user_id=user.id, username=user.username)
 
+    return TokenResponse(
+        access_token=token,
+        user=UserResponse(id=user.id, email=user.email, username=user.username),
+    )
+
+
+@router.post("/reset-password", response_model=TokenResponse)
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> TokenResponse:
+    if len(payload.new_password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters long")
+    login_id = payload.email.strip()
+    user = (
+        db.query(User)
+        .filter((User.email.ilike(login_id)) | (User.username.ilike(login_id)))
+        .first()
+    )
+    if user is None:
+        raise HTTPException(status_code=404, detail="No account found with this email or username")
+    user.password_hash = hash_password(payload.new_password)
+    db.commit()
+    db.refresh(user)
+    token = create_access_token(user_id=user.id, username=user.username)
     return TokenResponse(
         access_token=token,
         user=UserResponse(id=user.id, email=user.email, username=user.username),
