@@ -9,11 +9,14 @@ Then visit http://127.0.0.1:8000/docs for interactive API docs.
 
 from __future__ import annotations
 
+import re
 import threading
 import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi.responses import JSONResponse
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
@@ -128,8 +131,55 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+SSRF_BLOCKED_PATTERN = re.compile(
+    r"^(https?:\/\/)?(127\.|localhost|0\.0\.0\.0|::1|\[::1\]|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.|169\.254\.|metadata\.google\.internal)",
+    re.IGNORECASE,
+)
+SSRF_DISALLOWED_SCHEMES = re.compile(r"^(file|gopher|ftp|tftp|ldap|dict|data|javascript):", re.IGNORECASE)
+
+
+@app.middleware("http")
+async def security_and_ssrf_middleware(request, call_next):
+    # 1. SSRF query parameter defense
+    for param in ("url", "target", "dest", "proxy", "redirect"):
+        val = request.query_params.get(param)
+        if val:
+            val_lower = val.strip().lower()
+            if (
+                SSRF_BLOCKED_PATTERN.search(val_lower)
+                or SSRF_DISALLOWED_SCHEMES.search(val_lower)
+                or "127.0.0.1" in val_lower
+                or "localhost" in val_lower
+                or "169.254.169.254" in val_lower
+                or "[::1]" in val_lower
+            ):
+                return JSONResponse(
+                    status_code=400,
+                    content={"detail": "SSRF Protection: Unsafe URL parameter target rejected"},
+                    headers={"X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY"},
+                )
+
+    # 2. Process request
+    response = await call_next(request)
+
+    # 3. Enforce security headers
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=(), browsing-topics=()"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+
+    # 4. Strip Server disclosure
+    if "server" in response.headers:
+        del response.headers["server"]
+
+    return response
+
+
 app.include_router(auth_router)
 app.include_router(discovery_router)
+
 
 
 def extract_current_user_id_from_auth_token(token: str | None) -> int | None:
