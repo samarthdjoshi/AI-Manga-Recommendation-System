@@ -350,11 +350,25 @@ export default function HomePage() {
                     to={`/manga/${encodeURIComponent(item.gold_id)}`}
                     className="py-2.5 flex items-center gap-3 hover:bg-surfaceHover/60 px-1 rounded-xl transition group"
                   >
-                    {item.cover_image_url && (
-                      <div className="w-10 h-14 rounded-lg overflow-hidden bg-ink shrink-0 border border-border/60">
-                        <img src={item.cover_image_url} alt={item.title} className="w-full h-full object-cover" />
+                    <div className="w-10 h-14 rounded-lg overflow-hidden bg-slate-900 shrink-0 border border-border/60 relative flex items-center justify-center">
+                      {item.cover_image_url ? (
+                        <img
+                          src={item.cover_image_url}
+                          alt={item.title}
+                          referrerPolicy="no-referrer"
+                          loading="lazy"
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = "none";
+                            const fb = e.currentTarget.parentElement.querySelector(".mini-fallback");
+                            if (fb) fb.classList.remove("hidden");
+                          }}
+                        />
+                      ) : null}
+                      <div className={`mini-fallback ${item.cover_image_url ? "hidden" : ""} absolute inset-0 bg-gradient-to-br from-indigo-950 to-slate-900 flex items-center justify-center text-white/80 font-bold text-xs`}>
+                        📖
                       </div>
-                    )}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="text-xs font-bold text-foreground group-hover:text-accent transition truncate">
                         {item.title}
