@@ -70,7 +70,7 @@ export default function MangaDetailPage() {
         if (passedItem) return initialManga;
         throw err;
       }),
-      getRecommendations(goldId, 10).catch(() => ({ results: [] })),
+      getRecommendations(goldId, 12).catch(() => ({ results: [] })),
     ])
       .then(([mangaData, recData]) => {
         if (cancelled) return;

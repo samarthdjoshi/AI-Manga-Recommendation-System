@@ -468,19 +468,41 @@ class RecommenderService:
 
         row = self.gold_id_to_row[gold_id]
         query_vector = self.index.reconstruct(row).reshape(1, -1)
-        scores, row_indices = self.index.search(query_vector, top_k + 1)
+        # Search a wider candidate window in FAISS since Gold catalog covers top/merged subset
+        k_search = min(len(self.index_gold_ids), max(top_k * 40, 500))
+        scores, row_indices = self.index.search(query_vector, k_search)
 
         results = []
+        seen_gids = {gold_id}
         for score, row_idx in zip(scores[0], row_indices[0]):
             candidate_gold_id = self.index_gold_ids[row_idx]
-            if candidate_gold_id == gold_id:
+            if candidate_gold_id in seen_gids:
                 continue
             record = self.records_by_gold_id.get(candidate_gold_id)
             if record is None:
                 continue
+            seen_gids.add(candidate_gold_id)
             results.append({**record, "similarity_score": float(score)})
             if len(results) >= top_k:
                 break
+
+        # If FAISS returned fewer than top_k items in Gold records, backfill with genre & popularity similarity
+        if len(results) < top_k:
+            curr_rec = self.records_by_gold_id.get(gold_id, {})
+            target_genres = curr_rec.get("genres") or []
+            fallback_needed = top_k - len(results)
+            genre_recs = self.recommend_by_genres_and_popularity(
+                genres=target_genres,
+                top_k=fallback_needed * 3,
+                exclude_id=gold_id,
+            )
+            for r in genre_recs:
+                gid = r.get("gold_id")
+                if gid and gid not in seen_gids:
+                    seen_gids.add(gid)
+                    results.append(r)
+                if len(results) >= top_k:
+                    break
 
         return results
 

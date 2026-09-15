@@ -470,13 +470,29 @@ def recommend(
     except Exception:
         results = []
 
-    # If not in FAISS index or recommendations empty, use content-based genre & rating similarity
-    if not results:
+    # If FAISS returned fewer than top_k items or was empty, backfill with genre & popularity similarity
+    if len(results) < top_k:
         genres = query_manga_dict.get("genres", [])
+        seen_ids = {gold_id} | {r.get("gold_id") for r in results}
+        needed = top_k - len(results)
         if hasattr(svc, "recommend_by_genres_and_popularity"):
-            results = svc.recommend_by_genres_and_popularity(genres=genres, top_k=top_k, exclude_id=gold_id)
-        elif hasattr(svc, "discover"):
-            results = svc.discover(sort="rating", limit=top_k)
+            extra = svc.recommend_by_genres_and_popularity(genres=genres, top_k=needed * 3, exclude_id=gold_id)
+            for r in extra:
+                gid = r.get("gold_id")
+                if gid and gid not in seen_ids:
+                    seen_ids.add(gid)
+                    results.append(r)
+                if len(results) >= top_k:
+                    break
+        if len(results) < top_k and hasattr(svc, "discover"):
+            extra = svc.discover(sort="rating", limit=top_k * 2)
+            for r in extra:
+                gid = r.get("gold_id")
+                if gid and gid not in seen_ids:
+                    seen_ids.add(gid)
+                    results.append(r)
+                if len(results) >= top_k:
+                    break
 
     return RecommendationResponse(
         query_manga=query_manga_dict,
