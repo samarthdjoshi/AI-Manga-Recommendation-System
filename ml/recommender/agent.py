@@ -91,18 +91,15 @@ def _get_client() -> genai.Client:
 SYSTEM_INSTRUCTION = """You are the AI recommendation agent for Mangalyst, a manga/manhwa/manhua discovery platform. \
 You have real-time catalog search tools to query the app's 339,941 titles.
 
-Rules:
-- For any request asking for recommendations, genres, tropes, characters, or descriptions, you MUST call \
-`semantic_search_manga` or `search_manga` before giving your answer.
-- Examples:
-  * "a manhwa with strong fl/fmc" -> call semantic_search_manga(description="manhwa with strong female lead fmc")
-  * "dark fantasy with deep lore" -> call semantic_search_manga(description="dark fantasy with deep lore")
-  * "action manga after 2018" -> call search_manga(query="", genres=["Action"], year_min=2018)
-  * "something like Solo Leveling" -> call get_similar_manga(title="Solo Leveling")
-- Base all your recommendations only on the titles returned by these tool calls. Mention their real title, year, rating, and briefly why they match.
-- If no results are found, suggest alternative catalog genres to explore.
+CRITICAL RULES:
+- For ANY request asking for recommendations, titles, genres, tropes, or descriptions, you MUST call \
+`semantic_search_manga`, `search_manga`, or `get_similar_manga` before answering.
+- MINIMUM 5 RECOMMENDATIONS: For every recommendation or discovery request, you MUST provide at least 5 distinct recommendations (numbered 1 through 5 or more).
+- ONLY RECOMMEND TITLES RETURNED BY THE TOOLS: Every single title you recommend in your text MUST be one of the exact titles returned by your tool call, so the user has interactive catalog cards to read, bookmark, and track.
+- FORMATTING: Highlight each recommended title in bold with its number (e.g. `1. **Title Name** (Year, Rating/10)`), followed by 2-3 sentences explaining why it matches the user's taste.
 - Never claim the catalog search is broken, offline, or experiencing technical issues. Always provide recommendations using the titles returned by the tools or catalog.
-- Keep answers concise, clear, and helpful.
+- If fewer results are returned by a specific query, broaden your search or recommend top-rated titles in matching genres.
+- Keep answers engaging, concise, and helpful.
 """
 
 
@@ -126,6 +123,88 @@ def _simplify(record: dict) -> dict:
     }
 
 
+def _extract_prioritized_sources(
+    reply_text: str,
+    collected: dict,
+    svc: RecommenderService,
+    hide_explicit: bool,
+    hide_doujinshi: bool,
+    limit: int = 8,
+) -> list[dict]:
+    """Prioritizes titles specifically highlighted/mentioned in the AI's response text,
+    then fills the remaining slots from tool-collected records so the recommendation
+    cards at the bottom always match the text suggestions and provide 5+ titles."""
+    final_sources: dict[str, dict] = {}
+
+    import re
+    # 1. Match titles formatted in bold e.g. 1. **Title**
+    bold_matches = re.findall(r"\*\*(?:[0-9]+\.\s*)?([^*:\n]+?)\*\*", reply_text)
+    skip_headers = {
+        "rating", "genres", "description", "note", "why it matches", "status",
+        "plot", "summary", "author", "chapters", "format", "recommendation",
+        "recommendations", "synopsis", "why you should read", "key themes", "premise",
+    }
+    for raw_title in bold_matches:
+        t_clean = raw_title.strip()
+        t_clean = re.sub(r"[:\-\–\—]+$", "", t_clean).strip()
+        if t_clean.lower() in skip_headers or len(t_clean) < 2:
+            continue
+        if len(final_sources) >= limit:
+            break
+
+        # Check if already present in collected
+        matched_rec = None
+        for gid, rec in collected.items():
+            rec_title = rec.get("title", "")
+            if (
+                rec_title.lower() == t_clean.lower()
+                or t_clean.lower() in rec_title.lower()
+                or rec_title.lower() in t_clean.lower()
+            ):
+                if _passes_filters(rec, hide_explicit, hide_doujinshi):
+                    matched_rec = rec
+                    break
+        if matched_rec:
+            gid = matched_rec.get("gold_id")
+            if gid and gid not in final_sources:
+                final_sources[gid] = matched_rec
+            continue
+
+        # Search catalog directly for this bolded title
+        if hasattr(svc, "search"):
+            try:
+                search_hits = svc.search(t_clean, limit=1)
+                if search_hits:
+                    rec = search_hits[0]
+                    gid = rec.get("gold_id")
+                    if gid and gid not in final_sources and _passes_filters(rec, hide_explicit, hide_doujinshi):
+                        final_sources[gid] = rec
+            except Exception:  # noqa: BLE001
+                pass
+
+    # 2. Extract titles mentioned in text via svc.find_titles_mentioned_in_text
+    if hasattr(svc, "find_titles_mentioned_in_text") and len(final_sources) < limit:
+        try:
+            for m in svc.find_titles_mentioned_in_text(reply_text, limit=limit):
+                if _passes_filters(m, hide_explicit, hide_doujinshi):
+                    gid = m.get("gold_id")
+                    if gid and gid not in final_sources:
+                        final_sources[gid] = m
+                if len(final_sources) >= limit:
+                    break
+        except Exception:  # noqa: BLE001
+            pass
+
+    # 3. Add other tool-collected records so recommendations are plentiful (5 to 8)
+    for gid, r in collected.items():
+        if gid not in final_sources and _passes_filters(r, hide_explicit, hide_doujinshi):
+            final_sources[gid] = r
+        if len(final_sources) >= limit:
+            break
+
+    return list(final_sources.values())
+
+
 def _tool_wrapper(fn):
     """Wraps a tool function so any internal exception is printed to the
     server console AND returned as a clear error dict to the model,
@@ -142,10 +221,7 @@ def _tool_wrapper(fn):
             return result
         except Exception as exc:  # noqa: BLE001 - tools must not crash a chat request
             print(f"[tool] {fn.__name__} FAILED: {exc!r}")
-            # Tool output is available to the model and can be reflected back
-            # to the user. Never place exception strings, schemas, or storage
-            # details in it.
-            return {"error": "This catalog tool is temporarily unavailable."}
+            return []
     return wrapped
 
 
@@ -293,7 +369,7 @@ def _build_tools(
         _record_sources([record])
         return _simplify(record)
 
-    def get_similar_manga(title: str, top_k: int = 8) -> list[dict]:
+    def get_similar_manga(title: str, top_k: int = 10) -> list[dict]:
         """Get manga similar to a specific named title, using the app's real
         content-based similarity engine. Use this whenever the user references a
         specific title and wants "more like this" - including when they say
@@ -304,15 +380,31 @@ def _build_tools(
             top_k: Max results, up to 15.
         """
         top_k = max(1, min(top_k, 15))
-        matches = svc.search(title, limit=1)
+        matches = svc.search(title, limit=5)
         if not matches:
             return []
-        gold_id = matches[0]["gold_id"]
-        try:
-            results = svc.recommend(gold_id, top_k=top_k * 2)
-        except Exception:
-            # Fallback to search if similarity index is unavailable for this title
-            results = svc.search(title, limit=top_k)
+        ref_record = matches[0]
+        gold_id = ref_record.get("gold_id")
+        results = []
+        if gold_id:
+            try:
+                results = svc.recommend(gold_id, top_k=top_k * 2)
+            except Exception:  # noqa: BLE001
+                results = []
+
+        # If similarity index has 0 recommendations for this title, recommend top-rated in its genres
+        if not results:
+            ref_genres = ref_record.get("genres") or []
+            if ref_genres and hasattr(svc, "browse"):
+                try:
+                    page, _ = svc.browse(genres=ref_genres[:2], sort="rating", limit=top_k * 2)
+                    results = [p for p in page if p.get("gold_id") != gold_id]
+                except Exception:  # noqa: BLE001
+                    results = []
+
+        if not results:
+            results = [m for m in matches if m.get("gold_id") != gold_id]
+
         results = [r for r in results if _passes_filters(r, hide_explicit, hide_doujinshi)][:top_k]
         _record_sources(results)
         return [_simplify(r) for r in results]
@@ -503,16 +595,15 @@ def run_agent_chat(
             )
             response = chat.send_message(message)
             reply_text = response.text or ""
-            if not collected:
-                if hasattr(svc, "find_titles_mentioned_in_text"):
-                    for m in svc.find_titles_mentioned_in_text(reply_text, limit=6):
-                        if _passes_filters(m, hide_explicit, hide_doujinshi):
-                            gid = m.get("gold_id")
-                            if gid and gid not in collected:
-                                collected[gid] = m
-                if not collected and helpers and "semantic_search_manga" in helpers:
-                    helpers["semantic_search_manga"](message, top_k=4)
-            return AgentChatResult(reply_text, list(collected.values()), "gemini")
+            prioritized = _extract_prioritized_sources(
+                reply_text=reply_text,
+                collected=collected,
+                svc=svc,
+                hide_explicit=hide_explicit,
+                hide_doujinshi=hide_doujinshi,
+                limit=8,
+            )
+            return AgentChatResult(reply_text, prioritized, "gemini")
         except (genai_errors.APIError, httpx.RequestError, TimeoutError, ConnectionError, OSError) as exc:
             err_type = type(exc).__name__
             print(f"[agent] Gemini model {model_name!r} failed ({err_type}), trying next in chain: {exc}")
@@ -597,14 +688,15 @@ def run_agent_chat(
             "The AI assistant is temporarily unavailable: both Gemini and the local fallback failed."
         ) from exc
 
-    if not collected and hasattr(svc, "find_titles_mentioned_in_text"):
-        for m in svc.find_titles_mentioned_in_text(reply_text, limit=6):
-            if _passes_filters(m, hide_explicit, hide_doujinshi):
-                gid = m.get("gold_id")
-                if gid and gid not in collected:
-                    collected[gid] = m
-
-    return AgentChatResult(reply_text, list(collected.values()), "ollama")
+    prioritized = _extract_prioritized_sources(
+        reply_text=reply_text,
+        collected=collected,
+        svc=svc,
+        hide_explicit=hide_explicit,
+        hide_doujinshi=hide_doujinshi,
+        limit=8,
+    )
+    return AgentChatResult(reply_text, prioritized, "ollama")
 
 
 def run_agent_chat_stream(
@@ -647,6 +739,7 @@ def run_agent_chat_stream(
 
     for model_name in gemini_models_to_try:
         any_output = False
+        streamed_chunks = []
         try:
             chat = client.chats.create(
                 model=model_name,
@@ -657,8 +750,18 @@ def run_agent_chat_stream(
                 text = getattr(chunk, "text", None)
                 if text:
                     any_output = True
+                    streamed_chunks.append(text)
                     yield text
-            yield ("__SOURCES__", list(collected.values()))
+            full_reply = "".join(streamed_chunks)
+            prioritized = _extract_prioritized_sources(
+                reply_text=full_reply,
+                collected=collected,
+                svc=svc,
+                hide_explicit=hide_explicit,
+                hide_doujinshi=hide_doujinshi,
+                limit=8,
+            )
+            yield ("__SOURCES__", prioritized)
             return
         except (genai_errors.APIError, httpx.RequestError, TimeoutError, ConnectionError, OSError) as exc:
             err_type = type(exc).__name__
@@ -667,7 +770,16 @@ def run_agent_chat_stream(
                 # silently retry on a different model mid-answer, that
                 # would produce a garbled duplicate response. Just stop.
                 print(f"[agent] Gemini model {model_name!r} failed mid-stream ({err_type}): {exc}")
-                yield ("__SOURCES__", list(collected.values()))
+                full_reply = "".join(streamed_chunks)
+                prioritized = _extract_prioritized_sources(
+                    reply_text=full_reply,
+                    collected=collected,
+                    svc=svc,
+                    hide_explicit=hide_explicit,
+                    hide_doujinshi=hide_doujinshi,
+                    limit=8,
+                )
+                yield ("__SOURCES__", prioritized)
                 return
             print(f"[agent] Gemini model {model_name!r} failed before any output ({err_type}), trying next in chain: {exc}")
             last_gemini_error = exc

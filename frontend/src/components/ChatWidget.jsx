@@ -329,7 +329,7 @@ export default function ChatWidget() {
                 {m.sources && m.sources.length > 0 && (
                   <div className="mt-2.5 space-y-2 max-w-full">
                     <span className="text-[11px] font-medium text-muted uppercase tracking-wider block text-left">
-                      Referenced Catalog Titles ({m.sources.length}):
+                      Recommended Titles ({m.sources.length}):
                     </span>
                     <div className="grid grid-cols-1 gap-2">
                       {m.sources.map((s) => (
