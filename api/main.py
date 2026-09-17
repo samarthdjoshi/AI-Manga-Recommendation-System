@@ -256,6 +256,31 @@ def health() -> HealthResponse:
     )
 
 
+@app.get("/debug/gemini")
+def debug_gemini() -> dict:
+    key = settings.GEMINI_API_KEY.strip() if settings.GEMINI_API_KEY else ""
+    masked_key = (key[:6] + "..." + key[-4:]) if len(key) > 10 else ("set_len_" + str(len(key)) if key else "empty")
+    if not key:
+        return {"configured": False, "error": "GEMINI_API_KEY is empty"}
+    
+    from google import genai
+    from google.genai import types
+    from ml.recommender.agent import MODEL_CHAIN
+    
+    results = {}
+    try:
+        client = genai.Client(api_key=key, http_options=types.HttpOptions(timeout=10000))
+        for model in MODEL_CHAIN:
+            try:
+                res = client.models.generate_content(model=model, contents="Hi")
+                results[model] = {"status": "ok", "reply": res.text.strip()[:60]}
+            except Exception as e:
+                results[model] = {"status": "error", "type": type(e).__name__, "message": str(e)[:200]}
+        return {"configured": True, "masked_key": masked_key, "models": results}
+    except Exception as exc:
+        return {"configured": True, "masked_key": masked_key, "error": str(exc), "type": type(exc).__name__}
+
+
 @app.get("/search", response_model=SearchResponse)
 def search(
     q: str = Query(..., min_length=1, description="Title text to search for"),
@@ -765,7 +790,7 @@ def chat(
                 db=db,
                 force_provider=None,
             )
-            agent_res = future.result(timeout=14.0)
+            agent_res = future.result(timeout=35.0)
         reply_text, source_records = agent_res
         provider = getattr(agent_res, "provider", "gemini")
     except Exception as exc:  # noqa: BLE001

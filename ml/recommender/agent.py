@@ -50,7 +50,7 @@ if TYPE_CHECKING:
 # ultra-fast response times (<2s) and highest reliability for tools and recommendations.
 MODEL_CHAIN = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
 
-GEMINI_TIMEOUT_MS = 10000  # 10 seconds server-side timeout
+GEMINI_TIMEOUT_MS = 25000  # 25 seconds server-side timeout
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "qwen2.5:7b-instruct"
 OLLAMA_TIMEOUT_SECONDS = 10
