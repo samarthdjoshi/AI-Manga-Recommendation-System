@@ -46,9 +46,9 @@ from ml.recommender.service import (
 if TYPE_CHECKING:
     from ml.recommender.chat_retrieval import ChatRetriever
 
-# Tried in order. gemini-3.5-flash-lite and gemini-flash-lite-latest offer
-# fast response times (<2s) and high availability for discovery tools.
-MODEL_CHAIN = ["gemini-3.5-flash-lite", "gemini-flash-lite-latest"]
+# Tried in order. gemini-3.6-flash and gemini-3.5-flash offer
+# ultra-fast response times (<2s) and highest reliability for tools and recommendations.
+MODEL_CHAIN = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
 
 GEMINI_TIMEOUT_MS = 10000  # 10 seconds server-side timeout
 OLLAMA_BASE_URL = "http://localhost:11434"
