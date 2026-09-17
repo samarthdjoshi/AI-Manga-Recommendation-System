@@ -92,6 +92,7 @@ class HealthResponse(BaseModel):
     version: str | None = None
     database: str | None = None
     database_host: str | None = None
+    ai_configured: bool | None = None
 
 
 class BrowseResponse(BaseModel):
