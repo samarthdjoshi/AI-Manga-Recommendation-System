@@ -319,23 +319,24 @@ def init_db() -> None:
 
     # Lightweight migration for existing SQLite databases:
     # ensure newly added columns on users table exist
-    with engine.connect() as conn:
-        try:
-            res = conn.exec_driver_sql("PRAGMA table_info(users)")
-            existing_cols = {row[1] for row in res.fetchall()}
-            if "avatar_url" not in existing_cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)")
-            if "banner_url" not in existing_cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN banner_url VARCHAR(500)")
-            if "bio" not in existing_cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN bio TEXT")
-            if "score_system" not in existing_cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN score_system VARCHAR(20) DEFAULT 'point_10_decimal'")
-            if "title_language" not in existing_cols:
-                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN title_language VARCHAR(20) DEFAULT 'romaji'")
-            conn.commit()
-        except Exception:
-            pass
+    if engine.dialect.name == "sqlite":
+        with engine.connect() as conn:
+            try:
+                res = conn.exec_driver_sql("PRAGMA table_info(users)")
+                existing_cols = {row[1] for row in res.fetchall()}
+                if "avatar_url" not in existing_cols:
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN avatar_url VARCHAR(500)")
+                if "banner_url" not in existing_cols:
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN banner_url VARCHAR(500)")
+                if "bio" not in existing_cols:
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN bio TEXT")
+                if "score_system" not in existing_cols:
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN score_system VARCHAR(20) DEFAULT 'point_10_decimal'")
+                if "title_language" not in existing_cols:
+                    conn.exec_driver_sql("ALTER TABLE users ADD COLUMN title_language VARCHAR(20) DEFAULT 'romaji'")
+                conn.commit()
+            except Exception:
+                pass
 
     # Ensure owner/admin account is always seeded on startup so container redeploys or new DBs preserve access
     try:

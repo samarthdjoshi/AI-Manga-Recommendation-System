@@ -91,6 +91,7 @@ class HealthResponse(BaseModel):
     indexed_records: int
     version: str | None = None
     database: str | None = None
+    database_host: str | None = None
 
 
 class BrowseResponse(BaseModel):

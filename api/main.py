@@ -244,12 +244,14 @@ def get_chat_retriever():
 def health() -> HealthResponse:
     svc = get_service()
     from auth.database import engine
+    host = getattr(engine.url, "host", None)
     return HealthResponse(
         status="ok",
         total_gold_records=svc.total_records,
         indexed_records=svc.indexed_records,
-        version="0.1.2-persistent",
+        version="0.1.3-persistent",
         database=engine.url.drivername,
+        database_host=str(host) if host else None,
     )
 
 
