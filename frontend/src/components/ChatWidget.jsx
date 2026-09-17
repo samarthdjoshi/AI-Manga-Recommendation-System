@@ -1,6 +1,6 @@
 import { Link } from "react-router-dom";
 import { useState, useRef, useEffect, useCallback } from "react";
-import { sendChatMessage } from "../api/client";
+import { sendChatMessage, checkHealth } from "../api/client";
 import { useChatPageContext } from "../context/useChatPageContext";
 
 const SUGGESTED_PROMPTS = [
@@ -16,6 +16,7 @@ export default function ChatWidget() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [lastUserPrompt, setLastUserPrompt] = useState("");
+  const [aiStatus, setAiStatus] = useState("checking");
 
   // Persistent user preferences
   const [hideExplicit, setHideExplicit] = useState(() => {
@@ -30,6 +31,23 @@ export default function ChatWidget() {
   const inputRef = useRef(null);
   const toggleBtnRef = useRef(null);
   const abortControllerRef = useRef(null);
+
+  // Check health and live AI status
+  useEffect(() => {
+    let active = true;
+    checkHealth()
+      .then((data) => {
+        if (active && data) {
+          setAiStatus(data.status === "ok" ? "online" : "ready");
+        }
+      })
+      .catch(() => {
+        if (active) setAiStatus("ready");
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   // Focus input on open, return focus on close
   useEffect(() => {
@@ -169,12 +187,24 @@ export default function ChatWidget() {
           <div className="px-4 py-3 border-b border-border bg-surface flex-shrink-0">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-accent animate-pulse" />
+                <div
+                  className={`w-2.5 h-2.5 rounded-full transition-all ${
+                    aiStatus === "online"
+                      ? "bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse"
+                      : "bg-accent animate-pulse"
+                  }`}
+                />
                 <span className="font-semibold text-foreground text-sm tracking-tight">
                   Mangalyst Assistant
                 </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-accentSoft text-accent border border-accent/30">
-                  Catalog AI
+                <span
+                  className={`text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded border ${
+                    aiStatus === "online"
+                      ? "bg-emerald-500/15 text-emerald-400 border-emerald-500/30"
+                      : "bg-accentSoft text-accent border-accent/30"
+                  }`}
+                >
+                  {aiStatus === "online" ? "AI Online" : "Catalog AI"}
                 </span>
               </div>
               <button

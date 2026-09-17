@@ -92,14 +92,15 @@ SYSTEM_INSTRUCTION = """You are the AI recommendation agent for Mangalyst, a man
 You have real-time catalog search tools to query the app's 339,941 titles.
 
 CRITICAL RULES:
-- For ANY request asking for recommendations, titles, genres, tropes, or descriptions, you MUST call \
+1. ALWAYS CALL SEARCH TOOLS FIRST: For ANY request asking for recommendations, titles, genres, tropes, or descriptions, you MUST call \
 `semantic_search_manga`, `search_manga`, or `get_similar_manga` before answering.
-- MINIMUM 5 RECOMMENDATIONS: For every recommendation or discovery request, you MUST provide at least 5 distinct recommendations (numbered 1 through 5 or more).
-- ONLY RECOMMEND TITLES RETURNED BY THE TOOLS: Every single title you recommend in your text MUST be one of the exact titles returned by your tool call, so the user has interactive catalog cards to read, bookmark, and track.
-- FORMATTING: Highlight each recommended title in bold with its number (e.g. `1. **Title Name** (Year, Rating/10)`), followed by 2-3 sentences explaining why it matches the user's taste.
-- Never claim the catalog search is broken, offline, or experiencing technical issues. Always provide recommendations using the titles returned by the tools or catalog.
-- If fewer results are returned by a specific query, broaden your search or recommend top-rated titles in matching genres.
-- Keep answers engaging, concise, and helpful.
+2. MINIMUM 5 RECOMMENDATIONS: For every recommendation or discovery request, you MUST provide at least 5 distinct recommendations (numbered 1 through 5 or more).
+3. ONLY RECOMMEND REAL CATALOG TITLES: Every single title you recommend in your text MUST be one of the exact titles returned by your tool calls. NEVER invent titles or recommend manga outside the tool results, because the app displays interactive recommendation cards for the user to read, bookmark, and track each title.
+4. SPECIFIC & NON-VAGUE REASONING: For each recommended title:
+   - Start with bold number and title: e.g. `1. **Solo Leveling** (2018, ★ 8.4/10)`
+   - Provide concrete, specific details from its synopsis (main character names, core premise, unique power system or romantic dynamic, stakes) and explain specifically WHY it fits the user's prompt. Avoid vague generic filler like "captivating storyline" or "great art".
+5. EXACT TITLE SPELLING: Bold the exact title returned by the tool (e.g. `**Title**`) so that the app's recommendation cards match your text 100%.
+6. NEVER CLAIM ERRORS: Never say the catalog search has a technical issue or is unavailable. If a query returns fewer results, use `search_manga` with broader genres to recommend top-rated catalog titles.
 """
 
 
@@ -119,7 +120,7 @@ def _simplify(record: dict) -> dict:
         "rating": record.get("rating_combined"),
         "chapters": record.get("chapters"),
         "cover_image_url": record.get("cover_image_url"),
-        "description": (record.get("description") or "")[:300],
+        "description": (record.get("description") or "")[:900],
     }
 
 
@@ -320,11 +321,26 @@ def _build_tools(
         if min_chapters is not None:
             results = [r for r in results if (r.get("chapters") or 0) >= min_chapters]
 
-        results = [r for r in results if _passes_filters(r, hide_explicit, hide_doujinshi)][:limit]
+        results = [r for r in results if _passes_filters(r, hide_explicit, hide_doujinshi)]
+        # If filters left fewer than limit results, backfill with top-rated titles in active genres
+        if len(results) < limit and hasattr(svc, "browse"):
+            try:
+                extra_page, _ = svc.browse(genres=active_genres[:1] if active_genres else None, sort=sort, limit=limit * 2)
+                seen_ids = {r.get("gold_id") for r in results if r.get("gold_id")}
+                for p in extra_page:
+                    if p.get("gold_id") not in seen_ids and _passes_filters(p, hide_explicit, hide_doujinshi):
+                        results.append(p)
+                        seen_ids.add(p.get("gold_id"))
+                    if len(results) >= limit:
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+
+        results = results[:limit]
         _record_sources(results)
         return [_simplify(r) for r in results]
 
-    def semantic_search_manga(description: str, top_k: int = 8) -> list[dict]:
+    def semantic_search_manga(description: str, top_k: int = 10) -> list[dict]:
         """Search the catalog by MEANING rather than exact title/genre match - use this
         for vague, descriptive, or mood-based requests, e.g. "something with a slow burn
         romance and cooking" or "dark psychological horror with an unreliable narrator".

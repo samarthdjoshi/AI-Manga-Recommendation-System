@@ -249,7 +249,7 @@ def health() -> HealthResponse:
         status="ok",
         total_gold_records=svc.total_records,
         indexed_records=svc.indexed_records,
-        version="0.1.7-ai-min5-aligned",
+        version="0.1.8-ai-ultra-aligned",
         database=engine.url.drivername,
         database_host=str(host) if host else None,
         ai_configured=bool(settings.GEMINI_API_KEY.strip()) if settings.GEMINI_API_KEY else False,
@@ -489,16 +489,57 @@ def recommend_for_me(
         alpha=alpha,
     )
 
-    # If hybrid returned fewer than top_k, top up with highest-popularity catalog titles
+    # If hybrid returned fewer than top_k, top up with personalized genre & rating recommendations!
     if len(results) < top_k:
         existing_gids = {r["gold_id"] for r in results} | set(favorite_gold_ids)
-        pop_records = getattr(svc, "_records_by_popularity", svc.records)
-        for r in pop_records:
-            if r["gold_id"] not in existing_gids:
-                results.append({**r, "similarity_score": 0.5})
-                existing_gids.add(r["gold_id"])
-                if len(results) >= top_k:
-                    break
+        # Compute user's favorite genres from their library
+        genre_counts: dict[str, int] = {}
+        for gid in favorite_gold_ids:
+            rec = svc.records_by_gold_id.get(gid)
+            if rec:
+                for g in rec.get("genres", []):
+                    genre_counts[g] = genre_counts.get(g, 0) + 1
+        sorted_genres = sorted(genre_counts.keys(), key=lambda g: genre_counts[g], reverse=True)
+        top_genres = sorted_genres[:3]
+
+        if top_genres and hasattr(svc, "browse"):
+            try:
+                page, _ = svc.browse(genres=top_genres[:2], sort="rating", limit=top_k * 2)
+                for p in page:
+                    gid = p.get("gold_id")
+                    if gid and gid not in existing_gids:
+                        existing_gids.add(gid)
+                        p_copy = dict(p)
+                        p_copy["similarity_score"] = round(0.85 - (len(results) / max(top_k, 1)) * 0.25, 3)
+                        results.append(p_copy)
+                    if len(results) >= top_k:
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+
+        if len(results) < top_k and top_genres and hasattr(svc, "browse"):
+            try:
+                page, _ = svc.browse(genres=top_genres[:1], sort="rating", limit=top_k * 2)
+                for p in page:
+                    gid = p.get("gold_id")
+                    if gid and gid not in existing_gids:
+                        existing_gids.add(gid)
+                        p_copy = dict(p)
+                        p_copy["similarity_score"] = round(0.70 - (len(results) / max(top_k, 1)) * 0.20, 3)
+                        results.append(p_copy)
+                    if len(results) >= top_k:
+                        break
+            except Exception:  # noqa: BLE001
+                pass
+
+        if len(results) < top_k:
+            pop_records = getattr(svc, "_records_by_popularity", svc.records)
+            for r in pop_records:
+                if r["gold_id"] not in existing_gids:
+                    results.append({**r, "similarity_score": round(0.50 - (len(results) / max(top_k, 1)) * 0.10, 3)})
+                    existing_gids.add(r["gold_id"])
+                    if len(results) >= top_k:
+                        break
 
     return RecommendationResponse(
         query_manga=None,
