@@ -249,7 +249,7 @@ def health() -> HealthResponse:
         status="ok",
         total_gold_records=svc.total_records,
         indexed_records=svc.indexed_records,
-        version="0.1.9-ai-perfected",
+        version="0.2.0-ai-blazing",
         database=engine.url.drivername,
         database_host=str(host) if host else None,
         ai_configured=bool(settings.GEMINI_API_KEY.strip()) if settings.GEMINI_API_KEY else False,
