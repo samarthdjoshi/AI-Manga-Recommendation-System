@@ -240,7 +240,7 @@ def get_chat_retriever():
     return chat_retriever
 
 
-@app.get("/health", response_model=HealthResponse)
+@app.api_route("/health", methods=["GET", "HEAD"], response_model=HealthResponse)
 def health() -> HealthResponse:
     svc = get_service()
     from auth.database import engine
