@@ -15,7 +15,10 @@ import re
 from typing import ClassVar
 import unicodedata
 
-import faiss
+try:
+    import faiss
+except (ImportError, OSError):
+    faiss = None
 import numpy as np
 
 from common.paths import SILVER_DIR
@@ -172,16 +175,19 @@ class RecommenderService:
         starter_faiss = model_dir / "starter_index.faiss"
         starter_ids = model_dir / "starter_index_gold_ids.json"
 
-        if full_faiss.exists() and full_ids.exists():
+        if faiss is not None and full_faiss.exists() and full_ids.exists():
             self.index = faiss.read_index(str(full_faiss))
             with full_ids.open("r", encoding="utf-8") as f:
                 self.index_gold_ids: list[str] = json.load(f)
-        elif starter_faiss.exists() and starter_ids.exists():
+        elif faiss is not None and starter_faiss.exists() and starter_ids.exists():
             self.index = faiss.read_index(str(starter_faiss))
             with starter_ids.open("r", encoding="utf-8") as f:
                 self.index_gold_ids: list[str] = json.load(f)
-        else:
+        elif faiss is not None:
             self.index = faiss.IndexFlatIP(867)
+            self.index_gold_ids: list[str] = []
+        else:
+            self.index = None
             self.index_gold_ids: list[str] = []
 
         self.gold_id_to_row: dict[str, int] = {gid: i for i, gid in enumerate(self.index_gold_ids)}
@@ -410,7 +416,16 @@ class RecommenderService:
         "something", "anything", "everything", "nothing", "someone",
         "everyone", "somewhere", "anywhere", "level", "world", "life",
         "time", "day", "legend", "hero", "love", "family", "king",
-        "queen", "raid", "great", "the great",
+        "queen", "raid", "great", "the great", "fantasy", "romance",
+        "action", "adventure", "comedy", "drama", "horror", "mystery",
+        "supernatural", "thriller", "psychological", "magic", "martial arts",
+        "sports", "school", "music", "mecha", "isekai", "slice of life",
+        "historical", "sci-fi", "scifi", "shounen", "shojo", "seinen",
+        "josei", "manga", "manhwa", "manhua", "webtoon", "comic", "comics",
+        "anime", "novel", "series", "story", "stories", "recommend",
+        "recommendation", "recommendations", "chapter", "chapters",
+        "character", "characters", "strong", "good", "best", "popular",
+        "chemistry", "plot", "dark", "light", "power", "game",
     }
 
     def find_titles_mentioned_in_text(self, text: str, limit: int = 5) -> list[dict]:
@@ -461,8 +476,9 @@ class RecommenderService:
         if gold_id not in self.records_by_gold_id:
             raise MangaNotFoundError(f"No manga found with gold_id={gold_id!r}")
 
-        if gold_id not in self.gold_id_to_row:
-            raise MangaNotFoundError(f"gold_id={gold_id!r} exists but is not in the similarity index")
+        if self.index is None or gold_id not in self.gold_id_to_row:
+            rec = self.records_by_gold_id[gold_id]
+            return self.recommend_by_genres_and_popularity(genres=rec.get("genres"), top_k=top_k, exclude_id=gold_id)
 
         top_k = max(1, min(top_k, MAX_TOP_K))
 

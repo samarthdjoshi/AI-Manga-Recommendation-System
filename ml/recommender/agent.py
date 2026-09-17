@@ -57,7 +57,7 @@ MODEL_CHAIN = [
 GEMINI_TIMEOUT_MS = 14000  # 14 seconds server-side timeout
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL = "qwen2.5:7b-instruct"
-OLLAMA_TIMEOUT_SECONDS = 10
+OLLAMA_TIMEOUT_SECONDS = 40
 
 
 class AgentChatResult(tuple):
@@ -93,17 +93,16 @@ def _get_client() -> genai.Client:
 
 
 SYSTEM_INSTRUCTION = """You are the AI recommendation agent for Mangalyst, a manga/manhwa/manhua discovery platform. \
-You have real-time catalog search tools to query the app's 339,941 titles.
+You have real-time internet search and catalog discovery tools to query the current trending and popular titles in the app's catalog.
 
 CRITICAL RULES:
-1. ALWAYS CALL SEARCH TOOLS FIRST: For ANY request asking for recommendations, titles, genres, tropes, or descriptions, you MUST call \
-`semantic_search_manga`, `search_manga`, or `get_similar_manga` before answering.
-2. MINIMUM 5 RECOMMENDATIONS: For every recommendation or discovery request, you MUST provide at least 5 distinct recommendations (numbered 1 through 5 or more).
-3. ONLY RECOMMEND REAL CATALOG TITLES: Every single title you recommend in your text MUST be one of the exact titles returned by your tool calls. NEVER invent titles or recommend manga outside the tool results, because the app displays interactive recommendation cards for the user to read, bookmark, and track each title.
-4. SPECIFIC & NON-VAGUE REASONING: For each recommended title:
-   - Start with bold number and title: e.g. `1. **Solo Leveling** (2018, ★ 8.4/10)`
-   - Provide concrete, specific details from its synopsis (main character names, core premise, unique power system or romantic dynamic, stakes) and explain specifically WHY it fits the user's prompt. Avoid vague generic filler like "captivating storyline" or "great art".
-5. EXACT TITLE SPELLING: Bold the exact title returned by the tool (e.g. `**Title**`) so that the app's recommendation cards match your text 100%.
+1. ALWAYS SUGGEST REAL-TIME TRENDING & POPULAR TITLES FIRST: For ANY request asking for recommendations, titles, genres, or tropes (e.g. "fantasy romance manhwa"), you MUST call `get_trending_and_popular_manga` or `search_manga` before answering to discover the most popular and trending titles currently available in the catalog.
+2. ONLY RECOMMEND REAL CATALOG TITLES FROM TOOL CALLS: Every single title you recommend in your text MUST be one of the exact titles returned by your tool calls or context. Bold the exact title (e.g. `1. **Title** (Rating: X.X)`) so that the app's recommendation cards match your text 1-to-1.
+3. MINIMUM 5 RECOMMENDATIONS: For every recommendation or discovery request, you MUST provide at least 5 distinct recommendations (numbered 1 through 5).
+4. NEVER DUMP USER LIBRARY ON GENRE QUERIES: If the user asks for a specific genre, trope, mood, or topic (e.g. "fantasy romance", "isekai", "horror", "action", "cooking"), NEVER return or recommend their own tracked/favorite library titles unless they explicitly asked "based on my library" or "recommend based on what I read". Always search the catalog for titles matching the requested genre and theme.
+5. DEEP SYNOPSIS-GROUNDED REASONING: For each recommended title:
+   - Start with bold number and title: e.g. `1. **Title** (Rating: X.X)`
+   - Provide concrete, specific details from its synopsis (main character names, core premise, unique magic/powers, romantic dynamics or tension, stakes) and explain specifically WHY it fits the user's prompt and why it is trending/beloved. Avoid vague generic filler like "captivating storyline" or "great art".
 6. NEVER CLAIM ERRORS: Never say the catalog search has a technical issue or is unavailable. If a query returns fewer results, use `search_manga` with broader genres to recommend top-rated catalog titles.
 """
 
@@ -124,13 +123,13 @@ def _simplify(record: dict) -> dict:
         "rating": record.get("rating_combined"),
         "chapters": record.get("chapters"),
         "cover_image_url": record.get("cover_image_url"),
-        "description": (record.get("description") or "")[:900],
+        "description": (record.get("description") or "")[:1000],
     }
 
 
 def _extract_prioritized_sources(
     reply_text: str,
-    collected: dict,
+    collected: dict | list,
     svc: RecommenderService,
     hide_explicit: bool,
     hide_doujinshi: bool,
@@ -140,6 +139,13 @@ def _extract_prioritized_sources(
     then fills the remaining slots from tool-collected records so the recommendation
     cards at the bottom always match the text suggestions and provide 5+ titles."""
     final_sources: dict[str, dict] = {}
+
+    if isinstance(collected, list):
+        collected_dict = {r["gold_id"]: r for r in collected if isinstance(r, dict) and r.get("gold_id")}
+    elif isinstance(collected, dict):
+        collected_dict = collected
+    else:
+        collected_dict = {}
 
     import re
     # 1. Match titles formatted in bold e.g. 1. **Title**
@@ -157,18 +163,21 @@ def _extract_prioritized_sources(
         if len(final_sources) >= limit:
             break
 
-        # Check if already present in collected
+        # Check if already present in collected_dict
         matched_rec = None
-        for gid, rec in collected.items():
+        for gid, rec in collected_dict.items():
             rec_title = rec.get("title", "")
-            if (
-                rec_title.lower() == t_clean.lower()
-                or t_clean.lower() in rec_title.lower()
-                or rec_title.lower() in t_clean.lower()
-            ):
+            if rec_title.lower() == t_clean.lower():
                 if _passes_filters(rec, hide_explicit, hide_doujinshi):
                     matched_rec = rec
                     break
+        if not matched_rec and len(t_clean) >= 4:
+            for gid, rec in collected_dict.items():
+                rec_title = rec.get("title", "")
+                if len(rec_title) >= 4 and (t_clean.lower() in rec_title.lower() or rec_title.lower() in t_clean.lower()):
+                    if _passes_filters(rec, hide_explicit, hide_doujinshi):
+                        matched_rec = rec
+                        break
         if matched_rec:
             gid = matched_rec.get("gold_id")
             if gid and gid not in final_sources:
@@ -178,36 +187,30 @@ def _extract_prioritized_sources(
         # Search catalog directly for this bolded title
         if hasattr(svc, "search"):
             try:
-                search_hits = svc.search(t_clean, limit=1)
-                if search_hits:
-                    rec = search_hits[0]
-                    gid = rec.get("gold_id")
-                    if gid and gid not in final_sources and _passes_filters(rec, hide_explicit, hide_doujinshi):
-                        final_sources[gid] = rec
+                search_hits = svc.search(t_clean, limit=3)
+                for rec in search_hits:
+                    h_title = rec.get("title", "").lower()
+                    if h_title == t_clean.lower() or (len(t_clean) >= 4 and (t_clean.lower() in h_title or h_title in t_clean.lower())):
+                        gid = rec.get("gold_id")
+                        if gid and gid not in final_sources and _passes_filters(rec, hide_explicit, hide_doujinshi):
+                            final_sources[gid] = rec
+                            break
             except Exception:  # noqa: BLE001
                 pass
 
-    # 2. Extract titles mentioned in text via svc.find_titles_mentioned_in_text
-    if hasattr(svc, "find_titles_mentioned_in_text") and len(final_sources) < limit:
-        try:
-            for m in svc.find_titles_mentioned_in_text(reply_text, limit=limit):
-                if _passes_filters(m, hide_explicit, hide_doujinshi):
-                    gid = m.get("gold_id")
-                    if gid and gid not in final_sources:
-                        final_sources[gid] = m
-                if len(final_sources) >= limit:
-                    break
-        except Exception:  # noqa: BLE001
-            pass
+    # 2. If any bold titles were matched from the AI text, return ONLY those titles
+    # so what was suggested in the text are the ONLY ones that show up in the recommended title section!
+    if final_sources:
+        return list(final_sources.values())[:limit]
 
-    # 3. Add other tool-collected records so recommendations are plentiful (5 to 8)
-    for gid, r in collected.items():
+    # 3. Only if text had 0 title matches at all, fallback to tool-collected records
+    for gid, r in collected_dict.items():
         if gid not in final_sources and _passes_filters(r, hide_explicit, hide_doujinshi):
             final_sources[gid] = r
-        if len(final_sources) >= limit:
+        if len(final_sources) >= 5:
             break
 
-    return list(final_sources.values())
+    return list(final_sources.values())[:limit]
 
 
 def _tool_wrapper(fn):
@@ -236,6 +239,103 @@ def _ollama_is_reachable() -> bool:
         return resp.status_code == 200
     except requests.RequestException:
         return False
+
+
+_trending_cache: dict[tuple, tuple[float, list[dict]]] = {}
+
+TRENDING_ANILIST_QUERY = """
+query ($genre_in: [String], $sort: [MediaSort], $countryOfOrigin: CountryCode, $perPage: Int) {
+  Page(page: 1, perPage: $perPage) {
+    media(type: MANGA, genre_in: $genre_in, sort: $sort, countryOfOrigin: $countryOfOrigin) {
+      id
+      title {
+        romaji
+        english
+      }
+      averageScore
+      popularity
+      trending
+      countryOfOrigin
+      genres
+      description(asHtml: false)
+    }
+  }
+}
+"""
+
+
+def fetch_live_trending_catalog_manga(
+    svc: RecommenderService,
+    genres: list[str] | None = None,
+    is_manhwa: bool = False,
+    limit: int = 8,
+) -> list[dict]:
+    """Fetches current real-time trending and popular manga/manhwa from the internet
+    (via AniList API) and filters them to only titles available in our website catalog."""
+    now = time.time()
+    cache_key = (tuple(sorted(g.lower() for g in (genres or []))), is_manhwa, limit)
+    cached = _trending_cache.get(cache_key)
+    if cached and (now - cached[0] < 600):
+        return cached[1]
+
+    results = []
+    seen_ids = set()
+
+    # 1. Query AniList for live real-time internet trending & popular titles
+    try:
+        vars_payload: dict = {
+            "sort": ["TRENDING_DESC", "POPULARITY_DESC"],
+            "perPage": min(limit * 5, 50),
+        }
+        if genres:
+            vars_payload["genre_in"] = [g.title() for g in genres]
+        if is_manhwa:
+            vars_payload["countryOfOrigin"] = "KR"
+
+        resp = httpx.post(
+            "https://graphql.anilist.co",
+            json={"query": TRENDING_ANILIST_QUERY, "variables": vars_payload},
+            timeout=4.0,
+        )
+        if resp.status_code == 200:
+            media_items = resp.json().get("data", {}).get("Page", {}).get("media", [])
+            for it in media_items:
+                aid = f"anilist:{it['id']}"
+                rec = svc.records_by_gold_id.get(aid)
+                if not rec:
+                    eng = it.get("title", {}).get("english") or it.get("title", {}).get("romaji")
+                    if eng:
+                        matches = svc.search(eng, limit=1)
+                        if matches and matches[0]["title"].lower() == eng.lower():
+                            rec = matches[0]
+
+                if rec and rec["gold_id"] not in seen_ids:
+                    seen_ids.add(rec["gold_id"])
+                    results.append(rec)
+                if len(results) >= limit:
+                    break
+    except Exception as exc:  # noqa: BLE001
+        print(f"[agent] AniList live trending fetch error: {exc}")
+
+    # 2. Backfill with catalog's top-rated in requested genres if fewer than limit (e.g. offline fallback)
+    if len(results) < limit and hasattr(svc, "browse"):
+        try:
+            page, _ = svc.browse(
+                genres=genres if genres else None,
+                sort="rating",
+                limit=limit * 2,
+            )
+            for p in page:
+                if p["gold_id"] not in seen_ids:
+                    seen_ids.add(p["gold_id"])
+                    results.append(p)
+                if len(results) >= limit:
+                    break
+        except Exception as exc:  # noqa: BLE001
+            print(f"[agent] Catalog browse backfill error: {exc}")
+
+    _trending_cache[cache_key] = (now, results)
+    return results
 
 
 def _build_tools(
@@ -284,13 +384,13 @@ def _build_tools(
         """
         limit = max(1, min(limit, 15))
         results: list[dict] = []
+        active_genres = list(genres) if genres else []
 
         if query and query.strip():
             results.extend(svc.search(query, limit=limit * 2))
 
         # If title matches are fewer than requested limit, detect genres in query and browse catalog
         if len(results) < limit and hasattr(svc, "browse"):
-            active_genres = list(genres) if genres else []
             if query:
                 q_lower = query.lower()
                 for g in [
@@ -305,14 +405,14 @@ def _build_tools(
                 genres=active_genres if active_genres else None,
                 year_min=year_min, year_max=year_max,
                 min_chapters=min_chapters, hide_explicit=hide_explicit,
-                sort=sort, limit=limit * 2,
+                sort=sort, limit=limit * 3,
             )
             seen_ids = {r.get("gold_id") for r in results if r.get("gold_id")}
             for p in page:
                 if p.get("gold_id") not in seen_ids:
                     results.append(p)
                     seen_ids.add(p.get("gold_id"))
-                if len(results) >= limit * 2:
+                if len(results) >= limit * 3:
                     break
 
         if genres:
@@ -326,10 +426,11 @@ def _build_tools(
             results = [r for r in results if (r.get("chapters") or 0) >= min_chapters]
 
         results = [r for r in results if _passes_filters(r, hide_explicit, hide_doujinshi)]
+
         # If filters left fewer than limit results, backfill with top-rated titles in active genres
         if len(results) < limit and hasattr(svc, "browse"):
             try:
-                extra_page, _ = svc.browse(genres=active_genres[:1] if active_genres else None, sort=sort, limit=limit * 2)
+                extra_page, _ = svc.browse(genres=active_genres if active_genres else None, sort=sort, limit=limit * 2)
                 seen_ids = {r.get("gold_id") for r in results if r.get("gold_id")}
                 for p in extra_page:
                     if p.get("gold_id") not in seen_ids and _passes_filters(p, hide_explicit, hide_doujinshi):
@@ -339,6 +440,18 @@ def _build_tools(
                         break
             except Exception:  # noqa: BLE001
                 pass
+
+        # Prioritize titles that have full synopses and highest genre match
+        if active_genres:
+            active_set = {g.lower() for g in active_genres}
+            results.sort(
+                key=lambda r: (
+                    1 if len((r.get("description") or "").strip()) > 30 else 0,
+                    len(active_set & {g.lower() for g in (r.get("genres") or [])}),
+                    r.get("rating_combined") or 0.0,
+                ),
+                reverse=True,
+            )
 
         results = results[:limit]
         _record_sources(results)
@@ -430,9 +543,9 @@ def _build_tools(
         return [_simplify(r) for r in results]
 
     def get_user_favorites() -> dict:
-        """Get the current logged-in user's favorited and tracked library manga. Returns
-        {"logged_in": False} if there is no logged-in user, or
-        {"logged_in": True, "favorites": [...]} otherwise."""
+        """Get the current logged-in user's favorited and tracked library manga.
+        CRITICAL: Only call this if the user explicitly asks to view their favorites or library.
+        NEVER call this for genre or discovery searches (e.g. 'fantasy romance')."""
         if current_user_id is None:
             return {"logged_in": False}
         from auth.database import Favorite, TrackingEntry
@@ -441,13 +554,15 @@ def _build_tools(
         gold_ids = list(dict.fromkeys([row[0] for row in fav_rows] + [row[0] for row in track_rows]))
         records = [svc.records_by_gold_id[g] for g in gold_ids if g in svc.records_by_gold_id]
         records = [r for r in records if _passes_filters(r, hide_explicit, hide_doujinshi)]
-        _record_sources(records)
         return {"logged_in": True, "favorites": [_simplify(r) for r in records]}
 
     def get_personalized_recommendations(top_k: int = 8) -> dict:
-        """Get personalized recommendations for the current logged-in user, blending
-        favorites and library tracking (content similarity) with similar users' entries (collaborative
-        signal). Returns {"logged_in": False} if no user is logged in."""
+        """Get personalized recommendations tailored to the current logged-in user's taste.
+        CRITICAL: ONLY call this if the user explicitly asks for recommendations based on their own
+        library, favorites, or reading history (e.g. 'what should I read based on my library?' or
+        'recommend something based on my favorites').
+        NEVER call this for genre, topic, or trope queries (e.g. 'fantasy romance', 'isekai', 'horror').
+        Returns {"logged_in": False} if no user is logged in."""
         if current_user_id is None:
             return {"logged_in": False}
         from auth.database import Favorite, TrackingEntry
@@ -474,7 +589,34 @@ def _build_tools(
         _record_sources(results)
         return {"logged_in": True, "recommendations": [_simplify(r) for r in results]}
 
+    def get_trending_and_popular_manga(
+        genres: list[str] | None = None,
+        is_manhwa: bool = False,
+        limit: int = 8,
+    ) -> list[dict]:
+        """Fetch current real-time trending and most popular manga or manhwa from the internet,
+        strictly filtered to only titles available in our website catalog.
+        Use this tool whenever the user asks for recommendations, popular titles, trending
+        manga/manhwa, or top works in any genre or theme (e.g. fantasy romance).
+
+        Args:
+            genres: Real catalog genre names to filter by, e.g. ["Fantasy", "Romance"].
+            is_manhwa: Set True if the user asked for manhwa / webtoons / Korean comics.
+            limit: Max results, up to 15.
+        """
+        limit = max(1, min(limit, 15))
+        results = fetch_live_trending_catalog_manga(
+            svc=svc,
+            genres=genres,
+            is_manhwa=is_manhwa,
+            limit=limit,
+        )
+        results = [r for r in results if _passes_filters(r, hide_explicit, hide_doujinshi)]
+        _record_sources(results)
+        return [_simplify(r) for r in results]
+
     tools = [
+        _tool_wrapper(get_trending_and_popular_manga),
         _tool_wrapper(search_manga),
         _tool_wrapper(semantic_search_manga),
         _tool_wrapper(get_manga_details),
@@ -486,6 +628,7 @@ def _build_tools(
     # Exposed so the Ollama (non-agentic) fallback path can call the same
     # retrieval logic directly without going through model tool-calling.
     helpers = {
+        "get_trending_and_popular_manga": get_trending_and_popular_manga,
         "search_manga": search_manga,
         "semantic_search_manga": semantic_search_manga,
         "get_similar_manga": get_similar_manga,
@@ -510,7 +653,15 @@ def _build_system_instruction(
             "from the catalog."
         )
     else:
-        system += "\n\nUser auth state: Logged in. You can call get_user_favorites and get_personalized_recommendations if relevant."
+        system += (
+            "\n\nUser auth state: Logged in.\n"
+            "CRITICAL: ONLY call get_user_favorites or get_personalized_recommendations IF the user "
+            "specifically asks for recommendations based on their own library, favorites, or reading history "
+            "(e.g. 'what should I read based on my library?' or 'recommend something from my tracked manga').\n"
+            "For ANY topic, genre, trope, or theme request (e.g. 'fantasy romance', 'action isekai', 'psychological thriller'), "
+            "you MUST search the catalog using search_manga or semantic_search_manga. NEVER return or recommend their own "
+            "unrelated tracked library titles for genre queries."
+        )
 
     page_record = svc.records_by_gold_id.get(page_context_gold_id) if page_context_gold_id else None
     if page_record:
@@ -530,6 +681,18 @@ def _build_genai_history(history: list[dict]) -> list[types.Content]:
             types.Content(role=role, parts=[types.Part.from_text(text=turn.get("content", ""))])
         )
     return genai_history
+
+
+def _has_library_intent(message: str) -> bool:
+    msg = (message or "").lower()
+    triggers = [
+        "my library", "my favorites", "my list", "my tracked", "my bookmarks",
+        "based on what i read", "based on my reading", "based on my history",
+        "based on my profile", "based on my favorites", "based on my library",
+        "from my library", "from my favorites", "what should i read next",
+        "recommend based on my", "recommend from my"
+    ]
+    return any(t in msg for t in triggers)
 
 
 def _ollama_fallback_context(
@@ -552,9 +715,35 @@ def _ollama_fallback_context(
     similar_intent = any(w in message.lower() for w in ("similar", "like", "such as", "related", "else"))
     if title_matches and similar_intent:
         return helpers["get_similar_manga"](title_matches[0]["title"], top_k=10)
-    if title_matches:
+
+    recommendation_intent = any(
+        w in message.lower()
+        for w in ("recommend", "suggestion", "suggest", "find", "best", "top", "good", "list", "titles", "popular", "trending")
+    )
+    if title_matches and not recommendation_intent:
         helpers["_record_sources"](title_matches)
         return [helpers["_simplify"](m) for m in title_matches]
+
+    # For recommendation/discovery requests, prioritize real-time trending & popular titles available in the catalog!
+    if recommendation_intent and "get_trending_and_popular_manga" in helpers:
+        q_lower = message.lower()
+        is_manhwa = any(w in q_lower for w in ("manhwa", "webtoon", "korean", "manhua", "web comic"))
+        found_genres = []
+        for g in [
+            "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
+            "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
+            "martial arts", "sports", "isekai", "slice of life", "school"
+        ]:
+            if g in q_lower:
+                found_genres.append(g.title())
+
+        trending = helpers["get_trending_and_popular_manga"](
+            genres=found_genres if found_genres else None,
+            is_manhwa=is_manhwa,
+            limit=10,
+        )
+        if trending:
+            return trending
 
     results = helpers["semantic_search_manga"](message, top_k=10)
     if not results:
@@ -591,8 +780,61 @@ def run_agent_chat(
     tools, collected, helpers = _build_tools(
         svc, retriever, hide_explicit, hide_doujinshi, current_user_id, db
     )
+    # Only present library tools to Gemini when current user is logged in AND intent matches
+    active_tools = tools
+    if not (current_user_id is not None and _has_library_intent(message)):
+        active_tools = [
+            t for t in tools
+            if getattr(t, "__name__", "") not in ("get_user_favorites", "get_personalized_recommendations")
+        ]
+
     genai_history = _build_genai_history(history)
     system, page_record = _build_system_instruction(svc, page_context_gold_id, current_user_id)
+
+    recommendation_intent = any(
+        w in message.lower()
+        for w in (
+            "recommend", "suggestion", "suggest", "find", "best", "top", "good",
+            "list", "titles", "popular", "trending", "what should i", "give me",
+        )
+    ) or any(
+        g in message.lower()
+        for g in ("fantasy", "romance", "action", "isekai", "horror", "comedy", "manhwa", "manga", "drama", "adventure")
+    )
+    if recommendation_intent and not page_context_gold_id and not _has_library_intent(message):
+        q_lower = message.lower()
+        is_manhwa = any(w in q_lower for w in ("manhwa", "webtoon", "korean", "manhua", "web comic"))
+        found_genres = []
+        for g in [
+            "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
+            "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
+            "martial arts", "sports", "isekai", "slice of life", "school"
+        ]:
+            if g in q_lower:
+                found_genres.append(g.title())
+        try:
+            trending_context_records = fetch_live_trending_catalog_manga(
+                svc=svc,
+                genres=found_genres if found_genres else None,
+                is_manhwa=is_manhwa,
+                limit=10,
+            )
+            trending_context_records = [
+                r for r in trending_context_records
+                if _passes_filters(r, hide_explicit, hide_doujinshi)
+            ]
+            if trending_context_records:
+                helpers["_record_sources"](trending_context_records)
+                block = _ollama_context_block(trending_context_records)
+                system += (
+                    "\n\nCURRENT REAL-TIME TRENDING & POPULAR TITLES IN CATALOG:\n"
+                    f"{block}\n\n"
+                    "CRITICAL: When recommending titles, you MUST recommend from the above list (numbered 1 through 5, "
+                    "with bold title e.g. `1. **Title** (Rating: X.X)`). "
+                    "Never invent titles not present in this catalog list."
+                )
+        except Exception as exc:
+            print(f"[agent] Error pre-fetching live trending context: {exc}")
 
     last_gemini_error: Exception | None = None
     gemini_models_to_try = MODEL_CHAIN if force_provider != "ollama" else []
@@ -610,7 +852,7 @@ def run_agent_chat(
         try:
             chat = client.chats.create(
                 model=model_name,
-                config=types.GenerateContentConfig(system_instruction=system, tools=tools),
+                config=types.GenerateContentConfig(system_instruction=system, tools=active_tools),
                 history=genai_history,
             )
             response = chat.send_message(message)
@@ -626,11 +868,18 @@ def run_agent_chat(
                 hide_doujinshi=hide_doujinshi,
                 limit=8,
             )
-            return AgentChatResult(reply_text.strip(), prioritized, "gemini")
+            if len(prioritized) >= 3:
+                return AgentChatResult(reply_text.strip(), prioritized, "gemini")
+            print(f"[agent] Gemini model {model_name!r} returned ungrounded reply (only {len(prioritized)} catalog titles matched), trying direct RAG")
+            break
         except (genai_errors.APIError, httpx.RequestError, TimeoutError, ConnectionError, OSError) as exc:
             err_type = type(exc).__name__
             print(f"[agent] Gemini model {model_name!r} failed ({err_type}), trying next in chain: {exc}")
             last_gemini_error = exc
+            if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+                print("[agent] Quota exhausted (429) across project; skipping remaining Gemini models to Ollama")
+                client = None
+                break
             continue
 
     # If function calling failed across the model chain, try direct prompt-augmented generation (RAG)
@@ -641,9 +890,14 @@ def run_agent_chat(
             ctx_block = _ollama_context_block(ctx_records)
             rag_prompt = (
                 f"{system}\n\n"
+                "CRITICAL RULES:\n"
+                "1. Recommend at least 5 titles from the CATALOG CONTEXT below (numbered 1 through 5).\n"
+                "2. You MUST ONLY recommend titles from the CATALOG CONTEXT below. Never invent titles.\n"
+                "3. Format each recommendation as: `X. **Title** (Rating: X.X)` followed by a detailed paragraph "
+                "grounded in its synopsis (characters, plot, magic/setting, romance chemistry/stakes) explaining why it fits.\n\n"
                 f"CATALOG CONTEXT:\n{ctx_block}\n\n"
-                f"USER QUERY: {message}\n"
-                "Please recommend matching titles from the catalog context above and explain why they match:"
+                f"USER QUERY: {message}\n\n"
+                "Recommendations:"
             )
             for m_name in MODEL_CHAIN:
                 try:
@@ -664,6 +918,8 @@ def run_agent_chat(
                         return AgentChatResult(res.text.strip(), prioritized or ctx_records, "gemini")
                 except Exception as m_err:  # noqa: BLE001
                     print(f"[agent] Direct Gemini model {m_name} failed: {m_err}")
+                    if "429" in str(m_err) or "RESOURCE_EXHAUSTED" in str(m_err):
+                        break
                     continue
         except Exception as direct_err:  # noqa: BLE001
             print(f"[agent] Direct Gemini fallback failed: {direct_err}")
@@ -701,7 +957,7 @@ def run_agent_chat(
                 "messages": ollama_messages,
                 "stream": False,
                 "keep_alive": "30m",
-                "options": {"num_predict": 200},
+                "options": {"num_predict": 600},
             },
             timeout=OLLAMA_TIMEOUT_SECONDS,
         )
@@ -755,8 +1011,61 @@ def run_agent_chat_stream(
     tools, collected, helpers = _build_tools(
         svc, retriever, hide_explicit, hide_doujinshi, current_user_id, db
     )
+    # Only present library tools to Gemini when current user is logged in AND intent matches
+    active_tools = tools
+    if not (current_user_id is not None and _has_library_intent(message)):
+        active_tools = [
+            t for t in tools
+            if getattr(t, "__name__", "") not in ("get_user_favorites", "get_personalized_recommendations")
+        ]
+
     genai_history = _build_genai_history(history)
     system, page_record = _build_system_instruction(svc, page_context_gold_id, current_user_id)
+
+    recommendation_intent = any(
+        w in message.lower()
+        for w in (
+            "recommend", "suggestion", "suggest", "find", "best", "top", "good",
+            "list", "titles", "popular", "trending", "what should i", "give me",
+        )
+    ) or any(
+        g in message.lower()
+        for g in ("fantasy", "romance", "action", "isekai", "horror", "comedy", "manhwa", "manga", "drama", "adventure")
+    )
+    if recommendation_intent and not page_context_gold_id and not _has_library_intent(message):
+        q_lower = message.lower()
+        is_manhwa = any(w in q_lower for w in ("manhwa", "webtoon", "korean", "manhua", "web comic"))
+        found_genres = []
+        for g in [
+            "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
+            "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
+            "martial arts", "sports", "isekai", "slice of life", "school"
+        ]:
+            if g in q_lower:
+                found_genres.append(g.title())
+        try:
+            trending_context_records = fetch_live_trending_catalog_manga(
+                svc=svc,
+                genres=found_genres if found_genres else None,
+                is_manhwa=is_manhwa,
+                limit=10,
+            )
+            trending_context_records = [
+                r for r in trending_context_records
+                if _passes_filters(r, hide_explicit, hide_doujinshi)
+            ]
+            if trending_context_records:
+                helpers["_record_sources"](trending_context_records)
+                block = _ollama_context_block(trending_context_records)
+                system += (
+                    "\n\nCURRENT REAL-TIME TRENDING & POPULAR TITLES IN CATALOG:\n"
+                    f"{block}\n\n"
+                    "CRITICAL: When recommending titles, you MUST recommend from the above list (numbered 1 through 5, "
+                    "with bold title e.g. `1. **Title** (Rating: X.X)`). "
+                    "Never invent titles not present in this catalog list."
+                )
+        except Exception as exc:
+            print(f"[agent] Error pre-fetching live trending context: {exc}")
 
     last_gemini_error: Exception | None = None
     gemini_models_to_try = MODEL_CHAIN if force_provider != "ollama" else []
@@ -774,7 +1083,7 @@ def run_agent_chat_stream(
         try:
             chat = client.chats.create(
                 model=model_name,
-                config=types.GenerateContentConfig(system_instruction=system, tools=tools),
+                config=types.GenerateContentConfig(system_instruction=system, tools=active_tools),
                 history=genai_history,
             )
             for chunk in chat.send_message_stream(message):
@@ -817,6 +1126,10 @@ def run_agent_chat_stream(
                 return
             print(f"[agent] Gemini model {model_name!r} failed before any output ({err_type}), trying next in chain: {exc}")
             last_gemini_error = exc
+            if "429" in str(exc) or "RESOURCE_EXHAUSTED" in str(exc):
+                print("[agent] Quota exhausted (429) across project; skipping remaining Gemini models to Ollama")
+                client = None
+                break
             continue
 
     # If function calling failed across the model chain, try direct prompt-augmented generation (RAG)
@@ -827,9 +1140,14 @@ def run_agent_chat_stream(
             ctx_block = _ollama_context_block(ctx_records)
             rag_prompt = (
                 f"{system}\n\n"
+                "CRITICAL RULES:\n"
+                "1. Recommend at least 5 titles from the CATALOG CONTEXT below (numbered 1 through 5).\n"
+                "2. You MUST ONLY recommend titles from the CATALOG CONTEXT below. Never invent titles.\n"
+                "3. Format each recommendation as: `X. **Title** (Rating: X.X)` followed by a detailed paragraph "
+                "grounded in its synopsis (characters, plot, magic/setting, romance chemistry/stakes) explaining why it fits.\n\n"
                 f"CATALOG CONTEXT:\n{ctx_block}\n\n"
-                f"USER QUERY: {message}\n"
-                "Please recommend matching titles from the catalog context above and explain why they match:"
+                f"USER QUERY: {message}\n\n"
+                "Recommendations:"
             )
             for m_name in MODEL_CHAIN:
                 try:
@@ -852,6 +1170,8 @@ def run_agent_chat_stream(
                         return
                 except Exception as m_err:  # noqa: BLE001
                     print(f"[agent] Stream direct Gemini model {m_name} failed: {m_err}")
+                    if "429" in str(m_err) or "RESOURCE_EXHAUSTED" in str(m_err):
+                        break
                     continue
         except Exception as direct_err:  # noqa: BLE001
             print(f"[agent] Stream direct Gemini fallback failed: {direct_err}")
@@ -888,13 +1208,14 @@ def run_agent_chat_stream(
                 "messages": ollama_messages,
                 "stream": True,
                 "keep_alive": "30m",
-                "options": {"num_predict": 200},
+                "options": {"num_predict": 600},
             },
             timeout=OLLAMA_TIMEOUT_SECONDS,
             stream=True,
         )
         resp.raise_for_status()
         any_output = False
+        ollama_pieces: list[str] = []
         import json as _json
         for line in resp.iter_lines():
             if not line:
@@ -903,6 +1224,7 @@ def run_agent_chat_stream(
             piece = data.get("message", {}).get("content", "")
             if piece:
                 any_output = True
+                ollama_pieces.append(piece)
                 yield piece
             if data.get("done"):
                 break
@@ -917,4 +1239,13 @@ def run_agent_chat_stream(
             "The AI assistant is temporarily unavailable: both Gemini and the local fallback failed."
         ) from exc
 
-    yield ("__SOURCES__", list(collected.values()))
+    full_ollama_reply = "".join(ollama_pieces)
+    prioritized = _extract_prioritized_sources(
+        reply_text=full_ollama_reply,
+        collected=collected or context_records,
+        svc=svc,
+        hide_explicit=hide_explicit,
+        hide_doujinshi=hide_doujinshi,
+        limit=8,
+    )
+    yield ("__SOURCES__", prioritized or list(collected.values()))

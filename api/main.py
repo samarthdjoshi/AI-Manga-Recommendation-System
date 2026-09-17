@@ -775,9 +775,41 @@ def _build_fallback_catalog_records(
         except Exception as exc:  # noqa: BLE001
             print(f"[chat] Fallback text search error: {exc}")
 
-    # 4. Token/word search if still under limit
+    # 4. Live internet trending and popular catalog titles matching requested genres & format
     if len(results) < limit:
-        stop_words = {"something", "like", "manga", "recommend", "recommendation", "similar", "about", "show", "give", "best", "want", "find"}
+        q_lower = query.lower()
+        is_manhwa = any(w in q_lower for w in ("manhwa", "webtoon", "korean", "manhua"))
+        found_genres = []
+        for g in [
+            "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
+            "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
+            "martial arts", "sports", "isekai", "slice of life", "school"
+        ]:
+            if g in q_lower:
+                found_genres.append(g.title())
+        try:
+            from ml.recommender.agent import fetch_live_trending_catalog_manga
+            trending_recs = fetch_live_trending_catalog_manga(
+                svc=svc,
+                genres=found_genres if found_genres else None,
+                is_manhwa=is_manhwa,
+                limit=limit * 2,
+            )
+            for rec in trending_recs:
+                gid = rec.get("gold_id")
+                if gid and gid not in seen_ids and _passes_content_filters(rec, hide_explicit, hide_doujinshi):
+                    seen_ids.add(gid)
+                    r_copy = dict(rec)
+                    r_copy["reason"] = "Current trending and popular in catalog"
+                    results.append(r_copy)
+                if len(results) >= limit:
+                    break
+        except Exception as exc:  # noqa: BLE001
+            print(f"[chat] Fallback trending browse error: {exc}")
+
+    # 5. Token/word search if still under limit
+    if len(results) < limit:
+        stop_words = {"something", "like", "manga", "manhwa", "manhua", "recommend", "recommendation", "similar", "about", "show", "give", "best", "want", "find"}
         words = [w for w in re.split(r"[^\w]+", query) if len(w) > 2 and w.lower() not in stop_words]
         for word in words:
             try:
@@ -794,36 +826,6 @@ def _build_fallback_catalog_records(
                 pass
             if len(results) >= limit:
                 break
-
-    # 5. Genre and top-rated catalog browsing if still under limit
-    if len(results) < limit:
-        q_lower = query.lower()
-        found_genres = []
-        for g in [
-            "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
-            "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
-            "martial arts", "sports", "isekai", "slice of life", "school"
-        ]:
-            if g in q_lower:
-                found_genres.append(g.title())
-        if found_genres or "top" in q_lower or "best" in q_lower:
-            try:
-                page, _ = svc.browse(
-                    genres=found_genres if found_genres else None,
-                    sort="rating",
-                    limit=limit * 2,
-                )
-                for rec in page:
-                    gid = rec.get("gold_id")
-                    if gid and gid not in seen_ids and _passes_content_filters(rec, hide_explicit, hide_doujinshi):
-                        seen_ids.add(gid)
-                        r_copy = dict(rec)
-                        r_copy["reason"] = f"Top rated in {', '.join(found_genres) if found_genres else 'catalog'}"
-                        results.append(r_copy)
-                    if len(results) >= limit:
-                        break
-            except Exception as exc:  # noqa: BLE001
-                print(f"[chat] Fallback browse error: {exc}")
 
     return results
 
@@ -861,7 +863,7 @@ def chat(
                 db=db,
                 force_provider=None,
             )
-            agent_res = future.result(timeout=35.0)
+            agent_res = future.result(timeout=60.0)
         reply_text, source_records = agent_res
         provider = getattr(agent_res, "provider", "gemini")
     except Exception as exc:  # noqa: BLE001
