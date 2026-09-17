@@ -283,10 +283,35 @@ class Notification(Base):
     actor: Mapped["User"] = relationship(foreign_keys=[actor_id])
 
 
-# Normalize database URL for SQLAlchemy 2.0 (handles "postgres://" from Render/Supabase)
-db_url = settings.DATABASE_URL
-if db_url.startswith("postgres://"):
-    db_url = db_url.replace("postgres://", "postgresql://", 1)
+def normalize_database_url(raw_url: str) -> str:
+    """Normalize and URL-encode password in DATABASE_URL if special characters exist."""
+    if not raw_url or raw_url.startswith("sqlite"):
+        return raw_url
+    url = raw_url.strip()
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        import urllib.parse
+        prefix = "postgresql://"
+        rest = url[len(prefix):]
+        # In connection strings, the host starts after the last '@'
+        last_at = rest.rfind("@")
+        if last_at != -1:
+            user_pass = rest[:last_at]
+            host_part = rest[last_at + 1:]
+            # First colon separates username from password
+            first_colon = user_pass.find(":")
+            if first_colon != -1:
+                username = user_pass[:first_colon]
+                raw_password = user_pass[first_colon + 1:]
+                clean_password = urllib.parse.unquote(raw_password)
+                encoded_password = urllib.parse.quote_plus(clean_password)
+                return f"postgresql://{username}:{encoded_password}@{host_part}"
+    return url
+
+
+# Normalize database URL for SQLAlchemy 2.0 (handles "postgres://" and unencoded special characters)
+db_url = normalize_database_url(settings.DATABASE_URL)
 
 # SQLite-specific directory creation
 if db_url.startswith("sqlite"):
@@ -299,6 +324,7 @@ engine = create_engine(
     db_url,
     connect_args={"check_same_thread": False} if db_url.startswith("sqlite") else {},
     pool_pre_ping=True,
+    pool_recycle=300,
 )
 
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
