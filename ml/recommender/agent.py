@@ -48,7 +48,7 @@ if TYPE_CHECKING:
 
 # Tried in order. gemini-3.6-flash offers
 # ultra-fast response times (<2s) and highest reliability for tools and recommendations.
-MODEL_CHAIN = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-flash-latest"]
+MODEL_CHAIN = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
 
 GEMINI_TIMEOUT_MS = 25000  # 25 seconds server-side timeout
 OLLAMA_BASE_URL = "http://localhost:11434"
