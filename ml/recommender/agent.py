@@ -46,9 +46,14 @@ from ml.recommender.service import (
 if TYPE_CHECKING:
     from ml.recommender.chat_retrieval import ChatRetriever
 
-# Tried in order. gemini-3.6-flash offers
+# Tried in order. gemini-3.5-flash and gemini-3.5-flash-lite offer
 # ultra-fast response times (<2s) and highest reliability for tools and recommendations.
-MODEL_CHAIN = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]
+MODEL_CHAIN = [
+    "gemini-3.5-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.6-flash",
+    "gemini-flash-lite-latest",
+]
 
 GEMINI_TIMEOUT_MS = 25000  # 25 seconds server-side timeout
 OLLAMA_BASE_URL = "http://localhost:11434"
@@ -538,23 +543,23 @@ def _ollama_fallback_context(
     helpers directly (no tool-calling - small local models are far less
     reliable at multi-step tool orchestration than Gemini)."""
     if page_record:
-        return helpers["get_similar_manga"](page_record["title"], top_k=6)
+        return helpers["get_similar_manga"](page_record["title"], top_k=10)
 
     title_matches = (
-        svc.find_titles_mentioned_in_text(message, limit=3)
+        svc.find_titles_mentioned_in_text(message, limit=5)
         if hasattr(svc, "find_titles_mentioned_in_text")
         else []
     )
     similar_intent = any(w in message.lower() for w in ("similar", "like", "such as", "related", "else"))
     if title_matches and similar_intent:
-        return helpers["get_similar_manga"](title_matches[0]["title"], top_k=6)
+        return helpers["get_similar_manga"](title_matches[0]["title"], top_k=10)
     if title_matches:
         helpers["_record_sources"](title_matches)
         return [helpers["_simplify"](m) for m in title_matches]
 
-    results = helpers["semantic_search_manga"](message, top_k=6)
+    results = helpers["semantic_search_manga"](message, top_k=10)
     if not results:
-        results = helpers["search_manga"](message, limit=6)
+        results = helpers["search_manga"](message, limit=10)
     return results
 
 
@@ -611,6 +616,9 @@ def run_agent_chat(
             )
             response = chat.send_message(message)
             reply_text = response.text or ""
+            if not reply_text or not reply_text.strip():
+                print(f"[agent] Gemini model {model_name!r} returned empty text, trying next in chain")
+                continue
             prioritized = _extract_prioritized_sources(
                 reply_text=reply_text,
                 collected=collected,
@@ -619,7 +627,7 @@ def run_agent_chat(
                 hide_doujinshi=hide_doujinshi,
                 limit=8,
             )
-            return AgentChatResult(reply_text, prioritized, "gemini")
+            return AgentChatResult(reply_text.strip(), prioritized, "gemini")
         except (genai_errors.APIError, httpx.RequestError, TimeoutError, ConnectionError, OSError) as exc:
             err_type = type(exc).__name__
             print(f"[agent] Gemini model {model_name!r} failed ({err_type}), trying next in chain: {exc}")
@@ -646,7 +654,15 @@ def run_agent_chat(
                     )
                     if res.text and res.text.strip():
                         print(f"[agent] Direct Gemini fallback succeeded with model {m_name}")
-                        return AgentChatResult(res.text.strip(), ctx_records, "gemini")
+                        prioritized = _extract_prioritized_sources(
+                            reply_text=res.text.strip(),
+                            collected=ctx_records,
+                            svc=svc,
+                            hide_explicit=hide_explicit,
+                            hide_doujinshi=hide_doujinshi,
+                            limit=8,
+                        )
+                        return AgentChatResult(res.text.strip(), prioritized or ctx_records, "gemini")
                 except Exception as m_err:  # noqa: BLE001
                     print(f"[agent] Direct Gemini model {m_name} failed: {m_err}")
                     continue
@@ -769,6 +785,9 @@ def run_agent_chat_stream(
                     streamed_chunks.append(text)
                     yield text
             full_reply = "".join(streamed_chunks)
+            if not full_reply or not full_reply.strip():
+                print(f"[agent] Gemini stream model {model_name!r} returned empty text, trying next in chain")
+                continue
             prioritized = _extract_prioritized_sources(
                 reply_text=full_reply,
                 collected=collected,
@@ -800,6 +819,43 @@ def run_agent_chat_stream(
             print(f"[agent] Gemini model {model_name!r} failed before any output ({err_type}), trying next in chain: {exc}")
             last_gemini_error = exc
             continue
+
+    # If function calling failed across the model chain, try direct prompt-augmented generation (RAG)
+    if client and force_provider != "ollama":
+        try:
+            print("[agent] Stream function-calling models exhausted, attempting direct Gemini RAG fallback...")
+            ctx_records = _ollama_fallback_context(message, page_record, svc, helpers)
+            ctx_block = _ollama_context_block(ctx_records)
+            rag_prompt = (
+                f"{system}\n\n"
+                f"CATALOG CONTEXT:\n{ctx_block}\n\n"
+                f"USER QUERY: {message}\n"
+                "Please recommend matching titles from the catalog context above and explain why they match:"
+            )
+            for m_name in MODEL_CHAIN:
+                try:
+                    res = client.models.generate_content(
+                        model=m_name,
+                        contents=rag_prompt,
+                    )
+                    if res.text and res.text.strip():
+                        print(f"[agent] Stream direct Gemini fallback succeeded with model {m_name}")
+                        yield res.text.strip()
+                        prioritized = _extract_prioritized_sources(
+                            reply_text=res.text.strip(),
+                            collected=ctx_records,
+                            svc=svc,
+                            hide_explicit=hide_explicit,
+                            hide_doujinshi=hide_doujinshi,
+                            limit=8,
+                        )
+                        yield ("__SOURCES__", prioritized or ctx_records)
+                        return
+                except Exception as m_err:  # noqa: BLE001
+                    print(f"[agent] Stream direct Gemini model {m_name} failed: {m_err}")
+                    continue
+        except Exception as direct_err:  # noqa: BLE001
+            print(f"[agent] Stream direct Gemini fallback failed: {direct_err}")
 
     if force_provider == "ollama":
         print("[agent] force_provider='ollama' - skipping Gemini entirely for this request.")
