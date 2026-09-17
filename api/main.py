@@ -754,6 +754,36 @@ def _build_fallback_catalog_records(
             if len(results) >= limit:
                 break
 
+    # 5. Genre and top-rated catalog browsing if still under limit
+    if len(results) < limit:
+        q_lower = query.lower()
+        found_genres = []
+        for g in [
+            "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
+            "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
+            "martial arts", "sports", "isekai", "slice of life", "school"
+        ]:
+            if g in q_lower:
+                found_genres.append(g.title())
+        if found_genres or "top" in q_lower or "best" in q_lower:
+            try:
+                page, _ = svc.browse(
+                    genres=found_genres if found_genres else None,
+                    sort="rating",
+                    limit=limit * 2,
+                )
+                for rec in page:
+                    gid = rec.get("gold_id")
+                    if gid and gid not in seen_ids and _passes_content_filters(rec, hide_explicit, hide_doujinshi):
+                        seen_ids.add(gid)
+                        r_copy = dict(rec)
+                        r_copy["reason"] = f"Top rated in {', '.join(found_genres) if found_genres else 'catalog'}"
+                        results.append(r_copy)
+                    if len(results) >= limit:
+                        break
+            except Exception as exc:  # noqa: BLE001
+                print(f"[chat] Fallback browse error: {exc}")
+
     return results
 
 
@@ -817,43 +847,6 @@ def chat(
                 "for your query. Try searching by specific genres or titles."
             )
         )
-        # If Gemini API key is configured, perform fast direct context generation (RAG)
-        # so the user ALWAYS gets a real, intelligent AI response even if Google function-calling had a spike!
-        if settings.GEMINI_API_KEY and settings.GEMINI_API_KEY.strip():
-            try:
-                from google import genai
-                from google.genai import types
-                client = genai.Client(
-                    api_key=settings.GEMINI_API_KEY.strip(),
-                    http_options=types.HttpOptions(timeout=15000),
-                )
-                ctx_lines = [
-                    f"- {r.get('title')} ({r.get('year', '')}) | Genres: {', '.join((r.get('genres') or [])[:4])} | Rating: {r.get('rating') or r.get('rating_combined') or 'N/A'}/10\n  Description: {(r.get('description') or '')[:180]}"
-                    for r in fallback_records
-                ]
-                ctx_block = "\n".join(ctx_lines) if ctx_lines else "(No exact catalog matches, provide general top recommendations)"
-                rag_prompt = (
-                    "You are Mangalyst AI assistant, an expert manga, manhwa, and manhua recommendation AI.\n"
-                    "Provide an engaging, helpful, and enthusiastic response to the user's query.\n"
-                    "If catalog titles are listed below, highlight and recommend them naturally:\n\n"
-                    f"CATALOG TITLES:\n{ctx_block}\n\n"
-                    f"USER QUERY: {payload.message}\n"
-                    "Write a well-formatted markdown response:"
-                )
-                for fb_model in ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-flash-latest"]:
-                    try:
-                        rag_res = client.models.generate_content(model=fb_model, contents=rag_prompt)
-                        if rag_res.text and rag_res.text.strip():
-                            reply_text = rag_res.text.strip()
-                            status = "ok"
-                            provider = "gemini"
-                            print(f"[chat:{correlation_id}] Direct Gemini RAG succeeded with model {fb_model}")
-                            break
-                    except Exception as model_err:
-                        print(f"[chat:{correlation_id}] Model {fb_model} failed in RAG fallback: {model_err}")
-                        continue
-            except Exception as rag_err:
-                print(f"[chat:{correlation_id}] RAG fallback failed: {rag_err}")
 
         suggestions = [
             "Action & Adventure",

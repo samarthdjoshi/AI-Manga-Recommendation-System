@@ -101,6 +101,7 @@ Rules:
   * "something like Solo Leveling" -> call get_similar_manga(title="Solo Leveling")
 - Base all your recommendations only on the titles returned by these tool calls. Mention their real title, year, rating, and briefly why they match.
 - If no results are found, suggest alternative catalog genres to explore.
+- Never claim the catalog search is broken, offline, or experiencing technical issues. Always provide recommendations using the titles returned by the tools or catalog.
 - Keep answers concise, clear, and helpful.
 """
 
@@ -205,13 +206,33 @@ def _build_tools(
 
         if query and query.strip():
             results.extend(svc.search(query, limit=limit * 2))
-        else:
+
+        # If title matches are fewer than requested limit, detect genres in query and browse catalog
+        if len(results) < limit and hasattr(svc, "browse"):
+            active_genres = list(genres) if genres else []
+            if query:
+                q_lower = query.lower()
+                for g in [
+                    "action", "fantasy", "romance", "horror", "comedy", "drama", "adventure",
+                    "supernatural", "mystery", "psychological", "sci-fi", "thriller", "magic",
+                    "martial arts", "sports", "isekai", "slice of life", "school"
+                ]:
+                    if g in q_lower and g.title() not in active_genres:
+                        active_genres.append(g.title())
+
             page, _total = svc.browse(
-                genres=genres, year_min=year_min, year_max=year_max,
+                genres=active_genres if active_genres else None,
+                year_min=year_min, year_max=year_max,
                 min_chapters=min_chapters, hide_explicit=hide_explicit,
                 sort=sort, limit=limit * 2,
             )
-            results.extend(page)
+            seen_ids = {r.get("gold_id") for r in results if r.get("gold_id")}
+            for p in page:
+                if p.get("gold_id") not in seen_ids:
+                    results.append(p)
+                    seen_ids.add(p.get("gold_id"))
+                if len(results) >= limit * 2:
+                    break
 
         if genres:
             wanted = {g.lower() for g in genres}
@@ -297,14 +318,15 @@ def _build_tools(
         return [_simplify(r) for r in results]
 
     def get_user_favorites() -> dict:
-        """Get the current logged-in user's favorited manga. Returns
+        """Get the current logged-in user's favorited and tracked library manga. Returns
         {"logged_in": False} if there is no logged-in user, or
         {"logged_in": True, "favorites": [...]} otherwise."""
         if current_user_id is None:
             return {"logged_in": False}
-        from auth.database import Favorite
-        rows = db.query(Favorite.gold_id).filter(Favorite.user_id == current_user_id).all()
-        gold_ids = [row[0] for row in rows]
+        from auth.database import Favorite, TrackingEntry
+        fav_rows = db.query(Favorite.gold_id).filter(Favorite.user_id == current_user_id).all() if db else []
+        track_rows = db.query(TrackingEntry.gold_id).filter(TrackingEntry.user_id == current_user_id).all() if db else []
+        gold_ids = list(dict.fromkeys([row[0] for row in fav_rows] + [row[0] for row in track_rows]))
         records = [svc.records_by_gold_id[g] for g in gold_ids if g in svc.records_by_gold_id]
         records = [r for r in records if _passes_filters(r, hide_explicit, hide_doujinshi)]
         _record_sources(records)
@@ -312,21 +334,23 @@ def _build_tools(
 
     def get_personalized_recommendations(top_k: int = 8) -> dict:
         """Get personalized recommendations for the current logged-in user, blending
-        favorites (content similarity) with similar users' favorites (collaborative
+        favorites and library tracking (content similarity) with similar users' entries (collaborative
         signal). Returns {"logged_in": False} if no user is logged in."""
         if current_user_id is None:
             return {"logged_in": False}
-        from auth.database import Favorite
+        from auth.database import Favorite, TrackingEntry
         top_k = max(1, min(top_k, 15))
 
-        user_rows = db.query(Favorite.gold_id).filter(Favorite.user_id == current_user_id).all()
-        favorite_gold_ids = [row[0] for row in user_rows]
+        fav_rows = db.query(Favorite.gold_id).filter(Favorite.user_id == current_user_id).all() if db else []
+        track_rows = db.query(TrackingEntry.gold_id).filter(TrackingEntry.user_id == current_user_id).all() if db else []
+        favorite_gold_ids = list(dict.fromkeys([row[0] for row in fav_rows] + [row[0] for row in track_rows]))
         if not favorite_gold_ids:
-            return {"logged_in": True, "recommendations": [], "note": "user has no favorites yet"}
+            return {"logged_in": True, "recommendations": [], "note": "user has no favorites or tracked titles yet"}
 
-        all_rows = db.query(Favorite.user_id, Favorite.gold_id).all()
+        all_favs = db.query(Favorite.user_id, Favorite.gold_id).all() if db else []
+        all_tracks = db.query(TrackingEntry.user_id, TrackingEntry.gold_id).all() if db else []
         all_users_favorites: dict[int, list[str]] = {}
-        for uid, gid in all_rows:
+        for uid, gid in all_favs + all_tracks:
             all_users_favorites.setdefault(uid, []).append(gid)
 
         results = svc.recommend_hybrid(
@@ -494,6 +518,33 @@ def run_agent_chat(
             print(f"[agent] Gemini model {model_name!r} failed ({err_type}), trying next in chain: {exc}")
             last_gemini_error = exc
             continue
+
+    # If function calling failed across the model chain, try direct prompt-augmented generation (RAG)
+    if client and force_provider != "ollama":
+        try:
+            print("[agent] Function-calling models exhausted, attempting direct Gemini RAG fallback...")
+            ctx_records = _ollama_fallback_context(message, page_record, svc, helpers)
+            ctx_block = _ollama_context_block(ctx_records)
+            rag_prompt = (
+                f"{system}\n\n"
+                f"CATALOG CONTEXT:\n{ctx_block}\n\n"
+                f"USER QUERY: {message}\n"
+                "Please recommend matching titles from the catalog context above and explain why they match:"
+            )
+            for m_name in MODEL_CHAIN:
+                try:
+                    res = client.models.generate_content(
+                        model=m_name,
+                        contents=rag_prompt,
+                    )
+                    if res.text and res.text.strip():
+                        print(f"[agent] Direct Gemini fallback succeeded with model {m_name}")
+                        return AgentChatResult(res.text.strip(), ctx_records, "gemini")
+                except Exception as m_err:  # noqa: BLE001
+                    print(f"[agent] Direct Gemini model {m_name} failed: {m_err}")
+                    continue
+        except Exception as direct_err:  # noqa: BLE001
+            print(f"[agent] Direct Gemini fallback failed: {direct_err}")
 
     if force_provider == "ollama":
         print("[agent] force_provider='ollama' - skipping Gemini entirely for this request.")
