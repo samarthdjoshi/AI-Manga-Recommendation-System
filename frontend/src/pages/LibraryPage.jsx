@@ -16,11 +16,19 @@ import {
   listFavorites,
   listTracking,
   previewImportLibrary,
+  saveTracking,
   updateCustomList,
 } from "../api/client";
 import { useAuth } from "../context/useAuth";
 import LoadingSpinner from "../components/LoadingSpinner";
 import ErrorMessage from "../components/ErrorMessage";
+import {
+  getLocalVault,
+  saveLocalVault,
+  recordVaultTracking,
+  removeVaultTracking,
+  reconcileTrackingWithServer,
+} from "../utils/libraryVault";
 
 const STATUS_TABS = [
   { id: "all", label: "All Titles", icon: "📚" },
@@ -47,9 +55,13 @@ export default function LibraryPage() {
   // Active view tab: "all", status id, "favorites", "list:{id}", "tag:{tag}"
   const activeTab = searchParams.get("tab") || "all";
 
-  // Instant Data state (hydrated from localStorage for 0ms render)
+  const userId = user?.id || user?.email;
+
+  // Instant Data state (hydrated from persistent vault and localStorage for 0ms render)
   const [loading, setLoading] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.trackingEntries?.length || (v?.mangaMap && Object.keys(v.mangaMap).length)) return false;
       const c = localStorage.getItem("mangaverse_library_cache");
       return !c;
     } catch {
@@ -59,6 +71,8 @@ export default function LibraryPage() {
   const [error, setError] = useState("");
   const [trackingEntries, setTrackingEntries] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.trackingEntries?.length) return v.trackingEntries;
       const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
       return c.trackingEntries || [];
     } catch {
@@ -67,6 +81,8 @@ export default function LibraryPage() {
   });
   const [favoriteIds, setFavoriteIds] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.favoriteIds?.length) return new Set(v.favoriteIds);
       const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
       return new Set(c.favoriteIds || []);
     } catch {
@@ -75,6 +91,8 @@ export default function LibraryPage() {
   });
   const [customLists, setCustomLists] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.customLists?.length) return v.customLists;
       const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
       return c.customLists || [];
     } catch {
@@ -83,6 +101,8 @@ export default function LibraryPage() {
   });
   const [customListEntries, setCustomListEntries] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.customListEntries) return v.customListEntries;
       const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
       return c.customListEntries || {};
     } catch {
@@ -91,6 +111,8 @@ export default function LibraryPage() {
   });
   const [tagsByGoldId, setTagsByGoldId] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.tagsByGoldId) return v.tagsByGoldId;
       const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
       return c.tagsByGoldId || {};
     } catch {
@@ -99,6 +121,8 @@ export default function LibraryPage() {
   });
   const [mangaMap, setMangaMap] = useState(() => {
     try {
+      const v = getLocalVault(userId);
+      if (v?.mangaMap && Object.keys(v.mangaMap).length) return v.mangaMap;
       const c = JSON.parse(localStorage.getItem("mangaverse_library_cache") || "{}");
       return c.mangaMap || {};
     } catch {
@@ -196,6 +220,7 @@ export default function LibraryPage() {
           { gold_id: goldId, progress: res.progress, status: res.status, score: null, notes: null },
         ];
       });
+      recordVaultTracking(userId, goldId, { progress: res.progress, status: res.status });
     } catch {
       // silent
     } finally {
@@ -224,7 +249,13 @@ export default function LibraryPage() {
     ])
       .then(async ([trackData, favData, listsData, tagsData]) => {
         if (cancelled) return;
-        const trackingList = trackData.entries || [];
+        const serverTracking = trackData.entries || [];
+        const trackingList = await reconcileTrackingWithServer(
+          userId,
+          serverTracking,
+          token,
+          saveTracking
+        );
         const favSet = new Set((favData.favorites || []).map((f) => f.gold_id));
         const lists = listsData.lists || [];
         const tags = tagsData.tags_by_gold_id || {};
@@ -255,7 +286,17 @@ export default function LibraryPage() {
         setCustomLists(lists);
         setCustomListEntries(listEntriesMap);
         setTagsByGoldId(tags);
-        setMangaMap((prev) => ({ ...prev, ...byId }));
+        const updatedMangaMap = { ...mangaMap, ...byId };
+        setMangaMap(updatedMangaMap);
+
+        saveLocalVault(userId, {
+          trackingEntries: trackingList,
+          favoriteIds: [...favSet],
+          customLists: lists,
+          customListEntries: listEntriesMap,
+          tagsByGoldId: tags,
+          mangaMap: updatedMangaMap,
+        });
 
         try {
           localStorage.setItem(
@@ -266,7 +307,7 @@ export default function LibraryPage() {
               customLists: lists,
               customListEntries: listEntriesMap,
               tagsByGoldId: tags,
-              mangaMap: { ...mangaMap, ...byId },
+              mangaMap: updatedMangaMap,
             })
           );
         } catch {

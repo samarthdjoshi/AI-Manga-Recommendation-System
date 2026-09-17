@@ -13,6 +13,8 @@ import {
   saveTracking,
   setTagsForManga,
 } from "../api/client";
+import { useAuth } from "../context/useAuth";
+import { recordVaultTracking, removeVaultTracking } from "../utils/libraryVault";
 
 const statuses = [
   ["reading", "Reading"],
@@ -26,6 +28,7 @@ const statuses = [
 const emptyTracking = { status: "planning", progress: 0, score: "", notes: "" };
 
 export default function TrackingPanel({ goldId, token }) {
+  const { user } = useAuth();
   const [tracking, setTracking] = useState(emptyTracking);
   const [exists, setExists] = useState(false);
   const [loading, setLoading] = useState(Boolean(token));
@@ -116,16 +119,14 @@ export default function TrackingPanel({ goldId, token }) {
   async function save() {
     setBusy(true);
     setError("");
+    const payload = {
+      ...tracking,
+      progress: Number(tracking.progress) || 0,
+      score: tracking.score === "" ? null : Number(tracking.score),
+    };
     try {
-      await saveTracking(
-        goldId,
-        {
-          ...tracking,
-          progress: Number(tracking.progress) || 0,
-          score: tracking.score === "" ? null : Number(tracking.score),
-        },
-        token
-      );
+      await saveTracking(goldId, payload, token);
+      recordVaultTracking(user?.id || user?.email, goldId, payload);
       setExists(true);
     } catch {
       setError("Couldn't save your progress. Please try again.");
@@ -139,6 +140,7 @@ export default function TrackingPanel({ goldId, token }) {
     setError("");
     try {
       await removeTracking(goldId, token);
+      removeVaultTracking(user?.id || user?.email, goldId);
       setTracking(emptyTracking);
       setExists(false);
     } catch {
