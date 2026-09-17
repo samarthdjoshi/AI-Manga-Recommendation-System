@@ -243,11 +243,13 @@ def get_chat_retriever():
 @app.get("/health", response_model=HealthResponse)
 def health() -> HealthResponse:
     svc = get_service()
+    from auth.database import engine
     return HealthResponse(
         status="ok",
         total_gold_records=svc.total_records,
         indexed_records=svc.indexed_records,
-        version="0.1.1-ai-fix",
+        version="0.1.2-persistent",
+        database=engine.url.drivername,
     )
 
 

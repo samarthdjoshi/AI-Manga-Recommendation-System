@@ -90,6 +90,7 @@ class HealthResponse(BaseModel):
     total_gold_records: int
     indexed_records: int
     version: str | None = None
+    database: str | None = None
 
 
 class BrowseResponse(BaseModel):
